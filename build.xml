@@ -1,0 +1,99 @@
+<?xml version='1.0' encoding='utf-8'?>
+<project default="jar" basedir=".">
+  <!-- targeted QtJambi library version  -->
+  <property name="qtjambi.ver" value="4.6.3"/>
+
+  <!-- project directory hierarchy -->
+  <property name="src.dir" value="src"/>
+  <property name="classes.dir" value="build"/>
+  <property name="dist.dir" value="dist"/>
+  <property name="lib.dir" value="lib"/>
+  <property name="bin.dir" value="bin"/>
+  <property name="db.dir" value="db"/>
+  <property name="logs.dir" value="logs"/>
+  <property name="qtlib.dir" value="lib"/>
+  <property name="system.lib.dir" value="/usr/share/java"/>
+
+  <!-- debug -->
+  <property name="javac.debug" value="1"/>
+
+  <!-- product jar file -->
+  <property name="jar.name" value="nevernote.jar"/>
+
+  <!-- product exec command -->
+  <property name="shell.command" value="nevernote.sh"/>
+  <property name="bat.command" value="nevernote.bat"/>
+
+  <!-- depends -->
+  <path id="javac.classpath">
+      <!-- system third party library -->
+      <pathelement location="${system.lib.dir}/pdfrenderer.jar"/>
+      <pathelement location="${system.lib.dir}/log4j-1.2.jar"/>
+      <pathelement location="${lib.dir}/h2-1.2.136.jar"/>
+      <!-- bundled library -->
+      <pathelement location="${lib.dir}/evernote.jar"/>
+      <pathelement location="${lib.dir}/libthrift.jar"/>
+      <!-- dependent library -->
+      <pathelement location="${qtlib.dir}/qtjambi-${qtjambi.ver}.jar"/>
+      <pathelement location="${qtlib.dir}/qtjambi-util-${qtjambi.ver}.jar"/>
+      <pathelement location="${qtlib.dir}/qtjambi-linux32-gcc-${qtjambi.ver}.jar"/>
+  </path>
+
+  <target name="init">
+    <tstamp/>
+    <mkdir dir="${classes.dir}"/>
+    <mkdir dir="${dist.dir}"/>
+    <mkdir dir="${dist.dir}/lib"/>
+    <mkdir dir="${dist.dir}/bin"/>
+  </target>
+
+  <target name="run-init" depends="init">
+    <tstamp/>
+    <mkdir dir="${logs.dir}"/>
+    <mkdir dir="${db.dir}"/>
+  </target>
+
+  <target name="compile" depends="init">
+    <javac srcdir="${src.dir}"
+       destdir="${classes.dir}"
+       debug="${javac.debug}">
+       <classpath refid="javac.classpath"/>
+    </javac>
+  </target>
+
+  <target name="jar" depends="compile">
+    <jar destfile="${jar.name}" basedir="${classes.dir}"/>
+  </target>
+
+  <target name="dist" depends="jar">
+     <copy file="${bin.dir}/${shell.command}" todir="${dist.dir}/bin"/>
+     <copy file="${bin.dir}/${bat.command}" todir="${dist.dir}/bin"/>
+     <copy todir="${dist.dir}/lib">
+       <fileset file="${jar.name}"/>
+       <fileset dir="${lib.dir}"/>
+     </copy>
+  </target>
+
+  <target name="run" depends="run-init"
+   description="run built jar">
+  </target>
+
+  <target name="test"
+   description="unit test">
+  </target>
+
+  <target name="clean"
+   description="clean up" >
+    <delete dir="${dist.dir}" />
+    <delete file="${jar.name}"/>
+  </target>
+
+  <target name="dist-clean" depends="clean"
+   description="clean up all" >
+    <delete dir="${classes.dir}" />
+    <delete dir="${logs.dir}" />
+    <delete dir="${db.dir}" />
+    <delete file="secure.txt"/>
+  </target>
+
+</project>
