@@ -87,11 +87,11 @@ public class DatabaseConnection {
 		boolean dbExists = f.exists(); 
 		
 		// If it doesn't exist and we are the main thread, then we need to create stuff.
+		setupTables();
 		if (!dbExists)  {
 			createTables();
 			Global.setAutomaticLogin(false);
 		}
-		setupTables();
 		
 		logger.log(logger.HIGH, "Entering RDatabaseConnection.dbSetup");
 		
