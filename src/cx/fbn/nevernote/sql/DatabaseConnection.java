@@ -86,15 +86,9 @@ public class DatabaseConnection {
 		File f = new File(Global.getDirectoryPath() +File.separator +"db" +File.separator +"NeverNote.h2.db");
 		boolean dbExists = f.exists(); 
 		
-		// If it doesn't exist and we are the main thread, then we need to create stuff.
 		setupTables();
-		if (!dbExists)  {
-			createTables();
-			Global.setAutomaticLogin(false);
-		}
-		
+
 		logger.log(logger.HIGH, "Entering RDatabaseConnection.dbSetup");
-		
 
 		try {
 			String passwordString = null;
@@ -109,6 +103,11 @@ public class DatabaseConnection {
 			return;
 		}
 		
+		// If it doesn't exist and we are the main thread, then we need to create stuff.
+		if (!dbExists)  {
+			createTables();
+			Global.setAutomaticLogin(false);
+		}
 		logger.log(logger.HIGH, "Leaving RDatabaseConnection.dbSetup");
 		
 		
