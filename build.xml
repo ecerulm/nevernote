@@ -1,5 +1,8 @@
 <?xml version='1.0' encoding='utf-8'?>
 <project default="jar" basedir=".">
+  <!-- program name -->
+  <property name="project.name" value="nevernote"/>
+
   <!-- targeted QtJambi library version  -->
   <property name="qtjambi.ver" value="4.6.3"/>
 
@@ -9,11 +12,14 @@
   <property name="dist.dir" value="dist"/>
   <property name="lib.dir" value="lib"/>
   <property name="bin.dir" value="bin"/>
+  <property name="doc.dir" value="doc"/>
+
+  <!-- needed for running -->
   <property name="db.dir" value="db"/>
   <property name="logs.dir" value="logs"/>
 
   <!-- debug -->
-  <property name="javac.debug" value="1"/>
+  <property name="javac.debug" value="true"/>
 
   <!-- product jar file -->
   <property name="jar.name" value="nevernote.jar"/>
@@ -21,6 +27,11 @@
   <!-- product exec command -->
   <property name="shell.command" value="nevernote.sh"/>
   <property name="bat.command" value="nevernote.bat"/>
+
+  <!-- documents -->
+  <property name="doc.changelog" value="changelog.txt"/>
+  <property name="doc.release" value="release.txt"/>
+  <property name="doc.readme" value="README.txt"/>
 
   <!-- check os -->
   <condition property="isWindows">
@@ -61,6 +72,8 @@
       <property name="qtjambi.platform" value="macosx-gcc"/>
   </target>
 
+
+  <!-- compiler classpath -->
   <target name="set_classpath" depends="check_syslib_path">
     <path id="javac.classpath">
       <!-- system third party library -->
@@ -77,18 +90,10 @@
     </path>
   </target>
 
+  <!-- build -->
   <target name="init" depends="set_classpath">
     <tstamp/>
     <mkdir dir="${classes.dir}"/>
-    <mkdir dir="${dist.dir}"/>
-    <mkdir dir="${dist.dir}/lib"/>
-    <mkdir dir="${dist.dir}/bin"/>
-  </target>
-
-  <target name="run-init" depends="init">
-    <tstamp/>
-    <mkdir dir="${logs.dir}"/>
-    <mkdir dir="${db.dir}"/>
   </target>
 
   <target name="compile" depends="init">
@@ -103,13 +108,39 @@
     <jar destfile="${jar.name}" basedir="${classes.dir}"/>
   </target>
 
-  <target name="dist" depends="jar">
-     <copy file="${bin.dir}/${shell.command}" todir="${dist.dir}/bin"/>
-     <copy file="${bin.dir}/${bat.command}" todir="${dist.dir}/bin"/>
-     <copy todir="${dist.dir}/lib">
+  <!-- make distribution -->
+  <target name="dist-init" depends="init">
+    <mkdir dir="${dist.dir}"/>
+    <mkdir dir="${dist.dir}/lib"/>
+    <mkdir dir="${dist.dir}/bin"/>
+    <mkdir dir="${dist.dir}/doc"/>
+    <mkdir dir="${dist.dir}/db"/>
+    <mkdir dir="${dist.dir}/logs"/>
+  </target>
+
+  <target name="dist" depends="jar, dist-init">
+     <copy file="${bin.dir}/${shell.command}" todir="${dist.dir}/${project.name}/bin"/>
+     <copy file="${bin.dir}/${bat.command}" todir="${dist.dir}/${project.name}/bin"/>
+     <copy todir="${dist.dir}/${project.name}lib">
        <fileset file="${jar.name}"/>
        <fileset dir="${lib.dir}"/>
      </copy>
+     <copy todir="${dist.dir}/${project.name}/doc">
+       <fileset file="${doc.changelog}"/>
+       <fileset file="${doc.release}"/>
+       <fileset file="${doc.readme}"/>
+       <fileset dir="${doc.dir}"/>
+     </copy>
+     <exec dir="dist" executable="tar">
+         <arg line="czf ../../nevernote-bin.tar.gz ."/>
+     </exec>
+  </target>
+
+  <!-- test run -->
+  <target name="run-init" depends="init, jar">
+    <tstamp/>
+    <mkdir dir="${logs.dir}"/>
+    <mkdir dir="${db.dir}"/>
   </target>
 
   <target name="run" depends="run-if_windows, run-if_linux, run-if_linux64"
@@ -130,17 +161,14 @@
     <exec executable="${bin.dir}/${shell.command}"/>
   </target>
 
-  <target name="test"
-   description="unit test">
-  </target>
-
+  <!-- clean up -->
   <target name="clean"
    description="clean up" >
     <delete dir="${dist.dir}" />
     <delete file="${jar.name}"/>
   </target>
 
-  <target name="dist-clean" depends="clean"
+  <target name="all-clean" depends="clean"
    description="clean up all" >
     <delete dir="${classes.dir}" />
     <delete dir="${logs.dir}" />
