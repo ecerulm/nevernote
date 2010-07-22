@@ -23,7 +23,9 @@ package cx.fbn.nevernote;
 //import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.PrintStream;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -33,26 +35,19 @@ import com.evernote.edam.type.PrivilegeLevel;
 import com.evernote.edam.type.User;
 import com.evernote.edam.type.UserAttributes;
 import com.trolltech.qt.core.QByteArray;
-import com.trolltech.qt.core.QMutex;
 import com.trolltech.qt.core.QSettings;
 import com.trolltech.qt.gui.QPalette;
 
 import cx.fbn.nevernote.gui.ContainsAttributeFilterTable;
 import cx.fbn.nevernote.gui.DateAttributeFilterTable;
 import cx.fbn.nevernote.gui.ShortcutKeys;
-import cx.fbn.nevernote.signals.DBRunnerSignal;
-import cx.fbn.nevernote.threads.DBRunner;
 import cx.fbn.nevernote.utilities.ApplicationLogger;
 
 public class Global {
+	public static String version = "0.88";
     public static String username = ""; 
-    public static String password = ""; 
-
-    public static DBRunner				dbRunner;			// Database thread
-    public static DBRunnerSignal		dbRunnerSignal;		// Signals to the database runner
-    public static QMutex				dbrunnerWorkLock; 	// mutex lock for work queue
+    public static String password = "";     
     
-
     public static int mainThreadId=0;
     private static ArrayBlockingQueue<Boolean> mainThreadWaiter = new ArrayBlockingQueue<Boolean>(1);
     
@@ -81,7 +76,7 @@ public class Global {
     private static ArrayBlockingQueue<Boolean> indexThread04ThreadWaiter = new ArrayBlockingQueue<Boolean>(1);
     
     public static int dbThreadId=9;   // This should always be the highest thread ID
-    
+
     
     public static HashMap<String,String> passwordSafe = new HashMap<String, String>();
     public static List<String> passwordRemember = new ArrayList<String>();
@@ -144,6 +139,8 @@ public class Global {
 	public static HashMap<String,String> resourceMap;
 	public static String cipherPassword = "";
 	
+	static Calendar startTraceTime;
+	static Calendar intervalTraceTime;
 	
     // Do initial setup 
     public static void setup()  {
@@ -171,7 +168,6 @@ public class Global {
 //			indexLock = new DBLock();
 			logger = new ApplicationLogger("global.log");
 			shortcutKeys = new ShortcutKeys();
-			dbrunnerWorkLock = new QMutex();
 			mimicEvernoteInterface = getMimicEvernoteInterface();
 			resourceMap = new HashMap<String,String>();
 				
@@ -872,7 +868,7 @@ public class Global {
 		String val  = (String)settings.value("DatabaseURL", "");
 		settings.endGroup();
 		if (val.equals(""))
-			val = "jdbc:h2:"+Global.getDirectoryPath() +File.separator +"db" +File.separator +Global.databaseName; 
+			val = "jdbc:h2:"+Global.getDirectoryPath() +File.separator +"db" +File.separator +Global.databaseName;
 		return val;
     }
     public static String getDatabaseUserid() {
@@ -922,64 +918,7 @@ public class Global {
     public static void dbContinue() {
 //    	Global.dbThreadWait.wakeAll();
     }
-    public static synchronized void dbClientWait(int id) {
-    	if (id == mainThreadId) {
-			try {mainThreadWaiter.take(); } catch (InterruptedException e) {e.printStackTrace();}
-    	}
-    	if (id == syncThreadId) {
-			try {syncThreadWaiter.take();} catch (InterruptedException e) {e.printStackTrace();}
-    	}
-    	if (id == tagCounterThreadId) {
-    		try {tagCounterThreadWaiter.take();} catch (InterruptedException e) {e.printStackTrace();}
-    	}
-    	if (id == trashCounterThreadId) {
-    		try {trashCounterThreadWaiter.take();} catch (InterruptedException e) {e.printStackTrace();}
-    	}
-    	if (id == indexThreadId) {
-    		try {indexThreadWaiter.take();} catch (InterruptedException e) {e.printStackTrace();}
-    	}
-    	if (id == saveThreadId) {
-    		try {saveThreadWaiter.take();} catch (InterruptedException e) {e.printStackTrace();}
-    	}
-    	if (id == notebookCounterThreadId) {
-    		try {notebookCounterThreadWaiter.take();} catch (InterruptedException e) {e.printStackTrace();}
-    	}
-    	if (id == indexThread03Id) {
-    		try {indexThread03ThreadWaiter.take();} catch (InterruptedException e) {e.printStackTrace();}
-    	}
-    	if (id == indexThread04Id) {
-    		try {indexThread04ThreadWaiter.take();} catch (InterruptedException e) {e.printStackTrace();}
-    	}
-    }
-    public static void dbClientContinue(int id) {
-    	if (id == mainThreadId) {
-			try { mainThreadWaiter.put(true); } catch (InterruptedException e) { e.printStackTrace();}
-    	}
-    	if (id == syncThreadId) {
-			try { syncThreadWaiter.put(true); } catch (InterruptedException e) { e.printStackTrace();}
-    	}
-		if (id == tagCounterThreadId) { 
-			try { tagCounterThreadWaiter.put(true); } catch (InterruptedException e) { e.printStackTrace();}
-		}
-		if (id == trashCounterThreadId) { 
-			try { trashCounterThreadWaiter.put(true); } catch (InterruptedException e) { e.printStackTrace();}
-		}
-		if (id == indexThreadId) { 
-			try { indexThreadWaiter.put(true); } catch (InterruptedException e) { e.printStackTrace();}
-		}
-		if (id == saveThreadId) { 
-			try { saveThreadWaiter.put(true); } catch (InterruptedException e) { e.printStackTrace();}
-		}
-		if (id == notebookCounterThreadId) { 
-			try { notebookCounterThreadWaiter.put(true); } catch (InterruptedException e) { e.printStackTrace();}
-		}
-		if (id == indexThread03Id) { 
-			try { indexThread03ThreadWaiter.put(true); } catch (InterruptedException e) { e.printStackTrace();}
-		}
-		if (id == indexThread04Id) { 
-			try { indexThread04ThreadWaiter.put(true); } catch (InterruptedException e) { e.printStackTrace();}
-		}
-    }
+
     
     public static void saveState(String name, QByteArray state) {
 		settings.beginGroup("SaveState");
@@ -1094,6 +1033,98 @@ public class Global {
 		settings.endGroup();
 	}
 
+	
+	// Print date/time.  Used mainly for performance tracing
+	public static void trace(boolean resetInterval) {
+		String fmt = "MM/dd/yy HH:mm:ss.SSSSSS";
+		String dateTimeFormat = new String(fmt);
+		SimpleDateFormat simple = new SimpleDateFormat(dateTimeFormat);
+		Calendar cal = Calendar.getInstance();
+		if (intervalTraceTime == null) 
+			intervalTraceTime = Calendar.getInstance();
+		if (startTraceTime == null)
+			startTraceTime = Calendar.getInstance();
+		
+		float interval = (cal.getTimeInMillis() - intervalTraceTime.getTimeInMillis());
+		float total = (cal.getTimeInMillis() - startTraceTime.getTimeInMillis());
+		
+//		if (interval > 00.0) {
+			StackTraceElement[] exceptions = Thread.currentThread().getStackTrace();
+			System.out.println("------------------------------------------");
 
+			System.out.println("Date/Time " +simple.format(cal.getTime()));
+			System.out.format("Interval Time: %-10.6f%n", interval);
+			System.out.format("Total Time: %-10.6f%n", total);
+			for (int i=2; i<5 && i<exceptions.length; i++) {
+				System.out.println(exceptions[i]);
+			}
+//		}
+		if (resetInterval)
+			intervalTraceTime = cal;
+	}
+	public static void traceReset() {
+		intervalTraceTime = null;
+		startTraceTime = null;
+	}
+
+	
+    public static synchronized void dbClientWait(int id) {
+    	if (id == mainThreadId) {
+			try {mainThreadWaiter.take(); } catch (InterruptedException e) {e.printStackTrace();}
+    	}
+    	if (id == syncThreadId) {
+			try {syncThreadWaiter.take();} catch (InterruptedException e) {e.printStackTrace();}
+    	}
+    	if (id == tagCounterThreadId) {
+    		try {tagCounterThreadWaiter.take();} catch (InterruptedException e) {e.printStackTrace();}
+    	}
+    	if (id == trashCounterThreadId) {
+    		try {trashCounterThreadWaiter.take();} catch (InterruptedException e) {e.printStackTrace();}
+    	}
+    	if (id == indexThreadId) {
+    		try {indexThreadWaiter.take();} catch (InterruptedException e) {e.printStackTrace();}
+    	}
+    	if (id == saveThreadId) {
+    		try {saveThreadWaiter.take();} catch (InterruptedException e) {e.printStackTrace();}
+    	}
+    	if (id == notebookCounterThreadId) {
+    		try {notebookCounterThreadWaiter.take();} catch (InterruptedException e) {e.printStackTrace();}
+    	}
+    	if (id == indexThread03Id) {
+    		try {indexThread03ThreadWaiter.take();} catch (InterruptedException e) {e.printStackTrace();}
+    	}
+    	if (id == indexThread04Id) {
+    		try {indexThread04ThreadWaiter.take();} catch (InterruptedException e) {e.printStackTrace();}
+    	}
+    }
+    public static void dbClientContinue(int id) {
+    	if (id == mainThreadId) {
+			try { mainThreadWaiter.put(true); } catch (InterruptedException e) { e.printStackTrace();}
+    	}
+    	if (id == syncThreadId) {
+			try { syncThreadWaiter.put(true); } catch (InterruptedException e) { e.printStackTrace();}
+    	}
+		if (id == tagCounterThreadId) { 
+			try { tagCounterThreadWaiter.put(true); } catch (InterruptedException e) { e.printStackTrace();}
+		}
+		if (id == trashCounterThreadId) { 
+			try { trashCounterThreadWaiter.put(true); } catch (InterruptedException e) { e.printStackTrace();}
+		}
+		if (id == indexThreadId) { 
+			try { indexThreadWaiter.put(true); } catch (InterruptedException e) { e.printStackTrace();}
+		}
+		if (id == saveThreadId) { 
+			try { saveThreadWaiter.put(true); } catch (InterruptedException e) { e.printStackTrace();}
+		}
+		if (id == notebookCounterThreadId) { 
+			try { notebookCounterThreadWaiter.put(true); } catch (InterruptedException e) { e.printStackTrace();}
+		}
+		if (id == indexThread03Id) { 
+			try { indexThread03ThreadWaiter.put(true); } catch (InterruptedException e) { e.printStackTrace();}
+		}
+		if (id == indexThread04Id) { 
+			try { indexThread04ThreadWaiter.put(true); } catch (InterruptedException e) { e.printStackTrace();}
+		}
+    }
 }
 

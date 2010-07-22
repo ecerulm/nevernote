@@ -63,6 +63,7 @@ import com.trolltech.qt.core.QFile;
 import com.trolltech.qt.core.QFileInfo;
 import com.trolltech.qt.core.QFileSystemWatcher;
 import com.trolltech.qt.core.QIODevice;
+import com.trolltech.qt.core.QIODevice.OpenModeFlag;
 import com.trolltech.qt.core.QModelIndex;
 import com.trolltech.qt.core.QSize;
 import com.trolltech.qt.core.QTemporaryFile;
@@ -71,31 +72,38 @@ import com.trolltech.qt.core.QThreadPool;
 import com.trolltech.qt.core.QTimer;
 import com.trolltech.qt.core.QUrl;
 import com.trolltech.qt.core.Qt;
-import com.trolltech.qt.core.QIODevice.OpenModeFlag;
 import com.trolltech.qt.core.Qt.SortOrder;
+import com.trolltech.qt.core.Qt.WidgetAttribute;
 import com.trolltech.qt.gui.QAbstractItemView;
+import com.trolltech.qt.gui.QAbstractItemView.ScrollHint;
 import com.trolltech.qt.gui.QAction;
 import com.trolltech.qt.gui.QApplication;
 import com.trolltech.qt.gui.QCloseEvent;
 import com.trolltech.qt.gui.QColor;
 import com.trolltech.qt.gui.QComboBox;
+import com.trolltech.qt.gui.QComboBox.InsertPolicy;
 import com.trolltech.qt.gui.QCursor;
 import com.trolltech.qt.gui.QDesktopServices;
 import com.trolltech.qt.gui.QDialog;
 import com.trolltech.qt.gui.QFileDialog;
+import com.trolltech.qt.gui.QFileDialog.AcceptMode;
+import com.trolltech.qt.gui.QFileDialog.FileMode;
 import com.trolltech.qt.gui.QGridLayout;
 import com.trolltech.qt.gui.QHBoxLayout;
 import com.trolltech.qt.gui.QIcon;
+import com.trolltech.qt.gui.QImage;
 import com.trolltech.qt.gui.QLabel;
 import com.trolltech.qt.gui.QListWidget;
 import com.trolltech.qt.gui.QMainWindow;
 import com.trolltech.qt.gui.QMenu;
 import com.trolltech.qt.gui.QMessageBox;
+import com.trolltech.qt.gui.QMessageBox.StandardButton;
 import com.trolltech.qt.gui.QPixmap;
 import com.trolltech.qt.gui.QPrintDialog;
 import com.trolltech.qt.gui.QPrinter;
 import com.trolltech.qt.gui.QProgressBar;
 import com.trolltech.qt.gui.QSizePolicy;
+import com.trolltech.qt.gui.QSizePolicy.Policy;
 import com.trolltech.qt.gui.QSpinBox;
 import com.trolltech.qt.gui.QSplashScreen;
 import com.trolltech.qt.gui.QSplitter;
@@ -105,14 +113,8 @@ import com.trolltech.qt.gui.QTableWidgetItem;
 import com.trolltech.qt.gui.QTextEdit;
 import com.trolltech.qt.gui.QToolBar;
 import com.trolltech.qt.gui.QTreeWidgetItem;
-import com.trolltech.qt.gui.QAbstractItemView.ScrollHint;
-import com.trolltech.qt.gui.QComboBox.InsertPolicy;
-import com.trolltech.qt.gui.QFileDialog.AcceptMode;
-import com.trolltech.qt.gui.QFileDialog.FileMode;
-import com.trolltech.qt.gui.QMessageBox.StandardButton;
-import com.trolltech.qt.gui.QSizePolicy.Policy;
-import com.trolltech.qt.webkit.QWebSettings;
 import com.trolltech.qt.webkit.QWebPage.WebAction;
+import com.trolltech.qt.webkit.QWebSettings;
 import com.trolltech.qt.xml.QDomAttr;
 import com.trolltech.qt.xml.QDomDocument;
 import com.trolltech.qt.xml.QDomElement;
@@ -129,6 +131,7 @@ import cx.fbn.nevernote.dialog.NotebookEdit;
 import cx.fbn.nevernote.dialog.OnlineNoteHistory;
 import cx.fbn.nevernote.dialog.SavedSearchEdit;
 import cx.fbn.nevernote.dialog.TagEdit;
+import cx.fbn.nevernote.dialog.ThumbnailViewer;
 import cx.fbn.nevernote.dialog.WatchFolder;
 import cx.fbn.nevernote.filters.EnSearch;
 import cx.fbn.nevernote.gui.AttributeTreeWidget;
@@ -142,10 +145,8 @@ import cx.fbn.nevernote.gui.TableView;
 import cx.fbn.nevernote.gui.TagTreeWidget;
 import cx.fbn.nevernote.gui.Thumbnailer;
 import cx.fbn.nevernote.gui.TrashTreeWidget;
-import cx.fbn.nevernote.signals.DBRunnerSignal;
 import cx.fbn.nevernote.sql.DatabaseConnection;
-import cx.fbn.nevernote.sql.runners.WatchFolderRecord;
-import cx.fbn.nevernote.threads.DBRunner;
+import cx.fbn.nevernote.sql.WatchFolderRecord;
 import cx.fbn.nevernote.threads.IndexRunner;
 import cx.fbn.nevernote.threads.SyncRunner;
 import cx.fbn.nevernote.utilities.AESEncrypter;
@@ -199,7 +200,6 @@ public class NeverNote extends QMainWindow{
     boolean					noteDirty;					// Has the note been changed?
     boolean 				inkNote;                    // if this is an ink note, it is read only
   
-    QThread					dbThread;					// Thread to handle DB communication
     ListManager				listManager;					// DB runnable task
     
     List<QTemporaryFile>	tempFiles;					// Array of temporary files;
@@ -273,7 +273,8 @@ public class NeverNote extends QMainWindow{
     boolean				fromHistory;				// Is this from the history queue?
     String 				trashNoteGuid;				// Guid to restore / set into or out of trash to save position
     Thumbnailer			preview;					// generate preview image
-     
+    ThumbnailViewer		thumbnailViewer;			// View preview thumbnail; 
+    
     String iconPath = new String("classpath:cx/fbn/nevernote/icons/");
     	
 	
@@ -283,7 +284,7 @@ public class NeverNote extends QMainWindow{
     //***************************************************************
     //***************************************************************
     // Application Constructor	
-	public NeverNote() {
+	public NeverNote()  {
 				
 		if (!lockApplication()) {
 			System.exit(0);
@@ -292,12 +293,10 @@ public class NeverNote extends QMainWindow{
 		
 		logger = new ApplicationLogger("nevernote.log");
 		logger.log(logger.HIGH, tr("Starting Application"));
-		conn = new DatabaseConnection(logger, Global.mainThreadId);
-		conn.dbSetup();
+
 		
 		logger.log(logger.EXTREME, tr("Creating index connection"));	
 		logger.log(logger.EXTREME, tr("Building DB thread"));
-		Global.dbRunnerSignal = new DBRunnerSignal();
 		if (Global.getDatabaseUrl().toUpperCase().indexOf("CIPHER=") > -1) {
 			boolean goodCheck = false;
 			while (!goodCheck) {
@@ -309,13 +308,8 @@ public class NeverNote extends QMainWindow{
 				goodCheck = databaseCheck(Global.getDatabaseUrl(), Global.getDatabaseUserid(), Global.getDatabaseUserPassword(), Global.cipherPassword);
 			}
 		}
-		Global.dbRunner = new DBRunner(Global.getDatabaseUrl(), Global.getDatabaseUserid(), Global.getDatabaseUserPassword(), Global.cipherPassword);
-		logger.log(logger.EXTREME, tr("Starting DB thread"));
-		dbThread = new QThread(Global.dbRunner, "Database Thread");
-		dbThread.start();
-		logger.log(logger.EXTREME, tr("Waiting for DB thread startup to complete"));
-		logger.log(logger.EXTREME, tr("DB Thread has started"));
-		Global.dbRunnerSignal.start.emit();
+		conn = new DatabaseConnection(logger,Global.getDatabaseUrl(), Global.getDatabaseUserid(), Global.getDatabaseUserPassword(), Global.cipherPassword);
+//		conn.dbSetup(Global.getDatabaseUrl(), Global.getDatabaseUserid(), Global.getDatabaseUserPassword(), Global.cipherPassword);
 		logger.log(logger.EXTREME, tr("Setting main thread DB connection"));
 		logger.log(logger.EXTREME, tr("main DB thread setup complete."));
 		conn.checkDatabaseVersion();
@@ -323,6 +317,7 @@ public class NeverNote extends QMainWindow{
 		// Start building the invalid XML tables
 		Global.invalidElements = conn.getInvalidXMLTable().getInvalidElements();
 		List<String> elements = conn.getInvalidXMLTable().getInvalidAttributeElements();
+		
 		for (int i=0; i<elements.size(); i++) {
 			Global.invalidAttributes.put(elements.get(i), conn.getInvalidXMLTable().getInvalidAttributes(elements.get(i)));
 		}
@@ -346,20 +341,17 @@ public class NeverNote extends QMainWindow{
         int indexRunnerCount = Global.getIndexThreads();
         indexRunnerCount = 1;
         QThreadPool.globalInstance().setMaxThreadCount(indexRunnerCount+5);	// increase max thread count
-//        QThreadPool.globalInstance().setExpiryTimeout(1000*60*10);  // Set timeout to 10 minutes;
-//        QThreadPool.globalInstance().setExpiryTimeout(1000*60*10);  // Set timeout to 10 minutes;
-       
+
 		logger.log(logger.EXTREME, tr("Building list manager"));
         listManager = new ListManager(conn, logger, Global.mainThreadId);
         
 		logger.log(logger.EXTREME, tr("Building index runners & timers"));
-        indexRunner = new IndexRunner("indexRunner.log");
+        indexRunner = new IndexRunner("indexRunner.log", Global.getDatabaseUrl(), Global.getDatabaseUserid(), Global.getDatabaseUserPassword(), Global.cipherPassword);
 		indexThread = new QThread(indexRunner, "Index Thread");
 		indexThread.start();
-               
+		
         synchronizeAnimationTimer = new QTimer();
         synchronizeAnimationTimer.timeout.connect(this, "updateSyncButton()");
-        
         
 		indexTimer = new QTimer();
 		indexTime = 1000*60*5;     // look for unindexed every 5 minutes
@@ -371,7 +363,7 @@ public class NeverNote extends QMainWindow{
 				
 		logger.log(logger.EXTREME, tr("Setting sync thread & timers"));
 		syncThreadsReady=1;
-		syncRunner = new SyncRunner("syncRunner.log");
+		syncRunner = new SyncRunner("syncRunner.log", Global.getDatabaseUrl(), Global.getDatabaseUserid(), Global.getDatabaseUserPassword(), Global.cipherPassword);
 		syncTime = new SyncTimes().timeValue(Global.getSyncInterval());
 		syncTimer = new QTimer();
 		syncTimer.timeout.connect(this, "syncTimer()");
@@ -386,11 +378,8 @@ public class NeverNote extends QMainWindow{
 			automaticSync = false;
 			syncTimer.stop();
 		}
-//		syncRunner.setUpdateSequenceNumber(Global.getUpdateSequenceNumber());
-//		syncRunner.setSequenceDate(Global.getSequenceDate());
 		syncRunner.setEvernoteUpdateCount(Global.getEvernoteUpdateCount());
 		syncThread = new QThread(syncRunner, "Synchronization Thread");
-//		syncThread.setDaemon(true);
 		syncThread.start();
 		
 		
@@ -409,6 +398,7 @@ public class NeverNote extends QMainWindow{
 			saveTimer.start();
 		}
 		
+//		Global.trace();
 		logger.log(logger.EXTREME, tr("Starting external file monitor timer"));
 		externalFileSaveTimer = new QTimer();
 		externalFileSaveTimer.timeout.connect(this, "externalFileEditedSaver()");
@@ -436,30 +426,32 @@ public class NeverNote extends QMainWindow{
         // Setup the browser window
         noteCache = new HashMap<String,String>();
         browserWindow = new BrowserWindow(conn);
-        
+
         browserIndexSplitter.addWidget(noteTableView);
         browserIndexSplitter.addWidget(browserWindow);
         
         mainLeftRightSplitter.addWidget(leftSplitter1);
         mainLeftRightSplitter.addWidget(browserIndexSplitter);
 
-//        searchField = new QLineEdit();
-//    	searchField.returnPressed.connect(this, "searchFieldChanged()");   
         searchField = new QComboBox();
         searchField.setEditable(true);
-//    	searchField.currentIndexChanged.connect(this, "searchFieldChanged()");
-//    	searchField.currentStringChanged.connect(this, "searchFieldChanged()");
     	searchField.activatedIndex.connect(this, "searchFieldChanged()");
     	searchField.setDuplicatesEnabled(false);
     	searchField.editTextChanged.connect(this,"searchFieldTextChanged(String)");
         
     	quotaBar = new QProgressBar();
     	
+    	// Setup the thumbnail viewer
+    	thumbnailViewer = new ThumbnailViewer();
+    	thumbnailViewer.upArrow.connect(this, "upAction()");
+    	thumbnailViewer.downArrow.connect(this, "downAction()");
+    	thumbnailViewer.leftArrow.connect(this, "nextViewedAction()");
+    	thumbnailViewer.rightArrow.connect(this, "previousViewedAction()");
+
     	listManager.loadNotesIndex();
         initializeNotebookTree();
         initializeTagTree();
         initializeSavedSearchTree();
-    	//attributeTree.itemSelectionChanged.connect(this, "attributeTreeSelection()");
     	attributeTree.itemClicked.connect(this, "attributeTreeClicked(QTreeWidgetItem, Integer)");
     	attributeTreeSelected = null;
         initializeNoteTable();    
@@ -502,7 +494,6 @@ public class NeverNote extends QMainWindow{
 		noteTableView.rowChanged.connect(this, "scrollToGuid(String)");
 		noteTableView.resetViewport.connect(this, "scrollToCurrentGuid()");
 		noteTableView.doubleClicked.connect(this, "listDoubleClick()");
-			
 		listManager.trashSignal.countChanged.connect(trashTree, "updateCounts(Integer)");
 		trashTree.load();
         trashTree.itemSelectionChanged.connect(this, "trashTreeSelection()");
@@ -556,6 +547,7 @@ public class NeverNote extends QMainWindow{
 		if (!currentNoteGuid.trim().equals("")) {
 			currentNote = conn.getNoteTable().getNote(currentNoteGuid, true,true,false,false,true);
 		}
+		
 		noteIndexUpdated(true);
 		showColumns();
 		menuBar.showEditorBar.setChecked(Global.isWindowVisible("editorButtonBar"));
@@ -571,15 +563,8 @@ public class NeverNote extends QMainWindow{
               
         
         tagTree.tagSignal.listChanged.connect(this, "tagIndexUpdated()");
-
-////        notebookTree.updateCounts(listManager.getNotebookIndex(), listManager.getNotebookCounter());
         tagTree.showAllTags(true);
-////        tagTree.updateCounts(listManager.getTagCounter());
-		
-		int sortCol = Global.getSortColumn();
-		int sortOrder = Global.getSortOrder();
-		noteTableView.sortByColumn(sortCol, SortOrder.resolve(sortOrder));
-		
+
 		QIcon appIcon = new QIcon(iconPath+"nevernote.png");
     	setWindowIcon(appIcon);
     	trayIcon.setIcon(appIcon);
@@ -609,46 +594,47 @@ public class NeverNote extends QMainWindow{
     	
     	historyGuids.add(currentNoteGuid);
     	historyPosition = 1;
+    	
+    	int sortCol = Global.getSortColumn();
+		int sortOrder = Global.getSortOrder();
+		noteTableView.sortByColumn(sortCol, SortOrder.resolve(sortOrder));
 	}
 
 	
 	// Main entry point
 	public static void main(String[] args) {
-		{
+		QApplication.initialize(args);
+		QPixmap pixmap = new QPixmap("classpath:cx/fbn/nevernote/icons/splash_logo.png");
+		QSplashScreen splash = new QSplashScreen(pixmap);
 			
-			QApplication.initialize(args);
-			QPixmap pixmap = new QPixmap("classpath:cx/fbn/nevernote/icons/splash_logo.png");
-			QSplashScreen splash = new QSplashScreen(pixmap);
-			
-			for (String arg : args) {
-				String lower = arg.toLowerCase();
-				if (lower.startsWith("--name="))
-					Global.setName(arg.substring(arg.indexOf('=')+1));
-				if (lower.startsWith("--home="))
-					Global.currentDir = arg.substring(arg.indexOf('=')+1);
-				if (lower.startsWith("--disable-viewing"))
-					Global.disableViewing = true;
-
-			}
-
-			Global.setup();
-			boolean showSplash = Global.isWindowVisible("SplashScreen");
-			if (showSplash) 
-				splash.show();
-			NeverNote application = new NeverNote();	
-			if (Global.wasWindowMaximized())
-				application.showMaximized();
-			else
-				application.show();
-			if (showSplash)
-				splash.finish(application);
-			QApplication.exec();
+		for (String arg : args) {
+			String lower = arg.toLowerCase();
+			if (lower.startsWith("--name="))
+				Global.setName(arg.substring(arg.indexOf('=')+1));
+			if (lower.startsWith("--home="))
+				Global.currentDir = arg.substring(arg.indexOf('=')+1);
+			if (lower.startsWith("--disable-viewing"))
+				Global.disableViewing = true;
 		}
+		Global.setup();
+		boolean showSplash = Global.isWindowVisible("SplashScreen");
+		if (showSplash) 
+			splash.show();
+		NeverNote application = new NeverNote();
+		application.setAttribute(WidgetAttribute.WA_DeleteOnClose, true);
+		if (Global.wasWindowMaximized())
+			application.showMaximized();
+		else
+			application.show();
+		if (showSplash)
+			splash.finish(application);
+		QApplication.exec();
 		System.out.println("Goodbye.");
+		QApplication.exit();
 	}
 	// Exit point
 	@Override
-	public void closeEvent(QCloseEvent arg__1) {	
+	public void closeEvent(QCloseEvent event) {	
 		logger.log(logger.HIGH, "Entering NeverNote.closeEvent");
 		waitCursor(true);
 		
@@ -658,7 +644,7 @@ public class NeverNote extends QMainWindow{
 		}
 		saveNote();
 		setMessage("Beginning shutdown.");
-		
+
 		externalFileEditedSaver();
 		if (Global.isConnected && Global.synchronizeOnClose()) {
 			setMessage("Performing synchronization before closing.");
@@ -666,14 +652,16 @@ public class NeverNote extends QMainWindow{
 		}
 		setMessage("Closing Program.");
 		threadMonitorTimer.stop();
+
 		syncRunner.addWork("STOP");
 		indexRunner.addWork("STOP");
 		saveNote();
 		listManager.stop();
 		saveWindowState();
-		
+
 		if (tempFiles != null)
 			tempFiles.clear();
+
 		browserWindow.noteSignal.tagsChanged.disconnect();
 		browserWindow.noteSignal.titleChanged.disconnect();
 		browserWindow.noteSignal.noteChanged.disconnect();
@@ -684,7 +672,8 @@ public class NeverNote extends QMainWindow{
 		syncRunner.tagSignal.listChanged.disconnect();
         syncRunner.notebookSignal.listChanged.disconnect();
         syncRunner.noteIndexSignal.listChanged.disconnect();
-		
+
+
 		int position = noteTableView.header.visualIndex(Global.noteTableCreationPosition);
 		Global.setColumnPosition("noteTableCreationPosition", position);
 		position = noteTableView.header.visualIndex(Global.noteTableTagPosition);
@@ -739,19 +728,8 @@ public class NeverNote extends QMainWindow{
 			}
 		}
 
-
-		logger.log(logger.EXTREME, "Shutting down database");
-		conn.dbShutdown();
-		logger.log(logger.EXTREME, "Waiting for DB thread to terminate");
-		try {
-			dbThread.join();
-		} catch (InterruptedException e) {
-			e.printStackTrace();
-		}
-		logger.log(logger.EXTREME, "DB Thread has terminated");
 		unlockApplication();
 		logger.log(logger.HIGH, "Leaving NeverNote.closeEvent");
-		super.closeEvent(arg__1);
 	}
 
 	public void setMessage(String s) {
@@ -793,6 +771,7 @@ public class NeverNote extends QMainWindow{
 		
 		syncRunner.syncSignal.refreshLists.connect(this, "refreshLists()");
 	}
+	
 	private void setupBrowserSignalListeners() {
 		
 		browserWindow.fileWatcher.fileChanged.connect(this, "externalFileEdited(String)");
@@ -810,7 +789,9 @@ public class NeverNote extends QMainWindow{
 	    browserWindow.noteSignal.subjectDateChanged.connect(listManager, "updateNoteSubjectDate(String, QDateTime)");
 	    browserWindow.noteSignal.subjectDateChanged.connect(this, "updateListDateSubject(String, QDateTime)");
 	    browserWindow.noteSignal.authorChanged.connect(listManager, "updateNoteAuthor(String, String)");
+	    browserWindow.noteSignal.geoChanged.connect(listManager, "updateNoteGeoTag(String, Double,Double,Double)");
 	    browserWindow.noteSignal.authorChanged.connect(this, "updateListAuthor(String, String)");
+	    browserWindow.noteSignal.geoChanged.connect(this, "setNoteDirty()");
 	    browserWindow.noteSignal.sourceUrlChanged.connect(listManager, "updateNoteSourceUrl(String, String)");
 	    browserWindow.noteSignal.sourceUrlChanged.connect(this, "updateListSourceUrl(String, String)");
 	    browserWindow.focusLost.connect(this, "saveNote()");
@@ -818,7 +799,7 @@ public class NeverNote extends QMainWindow{
 //	    browserWindow.resourceSignal.externalFileEdit.connect(this, "saveResourceLater(String, String)");
 	}
 	private boolean lockApplication() {
-				
+			
 		String fileName = Global.currentDir +"db" +File.separator +"NeverNote.lock.db";
 //		QFile.remove(fileName);
 		if (QFile.exists(fileName)) {
@@ -1334,7 +1315,6 @@ public class NeverNote extends QMainWindow{
 		if (tagTree.selectedItems().size() > 0)
 			filter = true;
 		tagTree.showAllTags(!filter);
-////		tagTree.updateCounts(listManager.getTagCounter());
 		logger.log(logger.HIGH, "Leaving NeverNote.reloadTagTree");
 	}
 	// Edit an existing tag
@@ -1865,7 +1845,7 @@ public class NeverNote extends QMainWindow{
 		logger.log(logger.HIGH, "Entering NeverNote.about");
 		QMessageBox.about(this, 
 						tr("About NeverNote"),
-						tr("<h4><center><b>NeverNote</b></center></h4><hr><center>Version 0.86<hr></center>Evernote"
+						tr("<h4><center><b>NeverNote</b></center></h4><hr><center>Version "+Global.version+"<hr></center>Evernote"
 								+" Generic client.<br><br>" 
 								+"Licensed under GPL v2.  <br><hr><br>"
 								+"Evernote is copyright 2001-2010 by Evernote Corporation<br>"
@@ -2459,6 +2439,7 @@ public class NeverNote extends QMainWindow{
 	// Trigger a refresh when the note db has been updated
 	private void noteIndexUpdated(boolean reload) {
 		logger.log(logger.HIGH, "Entering NeverNote.noteIndexUpdated");
+		Global.traceReset();  
 		saveNote();
     	refreshEvernoteNoteList();
     	logger.log(logger.HIGH, "Calling note table reload in NeverNote.noteIndexUpdated() - "+reload);
@@ -2485,34 +2466,36 @@ public class NeverNote extends QMainWindow{
 		if (currentNoteGuid == null) 
 			currentNoteGuid = new String();
 		
-				
 		for (Note note : listManager.getNoteIndex()) {
 			tempNoteGuid = note.getGuid();
 			if (currentNoteGuid.equals(tempNoteGuid)) {
 				saveCurrentNoteGuid = new String(tempNoteGuid);
 			}
 		}
+		
 		if (listManager.getNoteIndex().size() == 0) {
 			currentNoteGuid = "";
 			currentNote = null;
 			browserWindow.clear();
 			browserWindow.setDisabled(true);
 		} 
+		
 		if (saveCurrentNoteGuid.equals("") && listManager.getNoteIndex().size() >0) {
 			currentNoteGuid = listManager.getNoteIndex().get(listManager.getNoteIndex().size()-1).getGuid();
 			currentNote = listManager.getNoteIndex().get(listManager.getNoteIndex().size()-1);
 			refreshEvernoteNote(true);
-		} else 
+		} else {
 			refreshEvernoteNote(false);
-
-		// Update the display counts
-////		notebookTree.updateCounts(listManager.getNotebookIndex(), listManager.getNotebookCounter());
+		}
 		reloadTagTree();
+
 		logger.log(logger.HIGH, "Leaving NeverNote.refreshEvernoteNoteList");
 	} 
     // Called when the previous arrow button is clicked 
     @SuppressWarnings("unused")
 	private void previousViewedAction() {
+    	if (!prevButton.isEnabled())
+    		return;
     	if (historyPosition == 0)
     		return;
    		historyPosition--;
@@ -2534,6 +2517,8 @@ public class NeverNote extends QMainWindow{
     }
     @SuppressWarnings("unused")
 	private void nextViewedAction() {
+    	if (!nextButton.isEnabled())
+    		return;
         String historyGuid = historyGuids.get(historyPosition);
         historyPosition++;
         fromHistory = true;
@@ -2636,7 +2621,7 @@ public class NeverNote extends QMainWindow{
     	logger.log(logger.HIGH, "Leaving NeverNote.updateListAuthor");
     }
 	private void updateListNoteNotebook(String guid, String notebook) {
-    	logger.log(logger.HIGH, "Entering NeverNote.updateListAuthor");
+    	logger.log(logger.HIGH, "Entering NeverNote.updateListNoteNotebook");
 
     	for (int i=0; i<noteTableView.model.rowCount(); i++) {
     		//QModelIndex modelIndex =  noteTableView.proxyModel.index(i, Global.noteTableGuidPosition);
@@ -2652,7 +2637,7 @@ public class NeverNote extends QMainWindow{
     			}	
     		}
     	}
-    	logger.log(logger.HIGH, "Leaving NeverNote.updateListAuthor");
+    	logger.log(logger.HIGH, "Leaving NeverNote.updateListNoteNotebook");
     }
     // Update a title for a specific note in the list
     @SuppressWarnings("unused")
@@ -3013,7 +2998,7 @@ public class NeverNote extends QMainWindow{
 		if (!noteCache.containsKey(currentNoteGuid) || conn.getNoteTable().isThumbnailNeeded(currentNoteGuid)) {
 			QByteArray js = new QByteArray();
 			// We need to prepend the note with <HEAD></HEAD> or encoded characters are ugly 
-			js.append("<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\">");
+			js.append("<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\">");		
 			js.append("<style type=\"text/css\">en-crypt-temp { border-style:solid; border-color:blue; padding:0.5mm 0.5mm 0.5mm 0.5mm; }</style>");
 			js.append("<style type=\"text/css\">en-hilight { background-color: rgb(255,255,0) }</style>");
 			js.append("<style type=\"text/css\">en-spell { text-decoration: none; border-bottom: dotted 1px #cc0000; }</style>");
@@ -3030,12 +3015,12 @@ public class NeverNote extends QMainWindow{
 				preview.finished.connect(this, "saveThumbnail(String)");
 				preview.setContent(js.toString());
 			}
-
 		} else {
 			logger.log(logger.HIGH, "Note content is being pulled from the cache");
 			String cachedContent = modifyCachedTodoTags(noteCache.get(currentNoteGuid));
 			browserWindow.getBrowser().setContent(new QByteArray(cachedContent));
 		}
+		
 		browserWindow.getBrowser().page().setContentEditable(!inkNote);  // We don't allow editing of ink notes
 		browserWindow.setNote(currentNote);
 		
@@ -3069,6 +3054,8 @@ public class NeverNote extends QMainWindow{
 		scrollToGuid(currentNoteGuid);
 		
 		browserWindow.loadingData(false);
+		if (thumbnailViewer.isActiveWindow())
+			thumbnailView();
 		waitCursor(false);
 		logger.log(logger.HIGH, "Leaving NeverNote.refreshEvernoteNote");
 	}
@@ -3081,6 +3068,9 @@ public class NeverNote extends QMainWindow{
 		tFile.close();
 		conn.getNoteTable().setThumbnail(guid, imgBytes);
 		conn.getNoteTable().setThumbnailNeeded(guid, false);
+		thumbnailViewer.setThumbnail(QImage.fromData(imgBytes));
+		if (thumbnailViewer.isVisible()) 
+			thumbnailViewer.showFullScreen();
 		
 		/*		
   		QByteArray img2 = new QByteArray(conn.getNoteTable().getThumbnail(guid));
@@ -3314,7 +3304,7 @@ public class NeverNote extends QMainWindow{
     	newNote.setAttributes(new NoteAttributes());
     	conn.getNoteTable().addNote(newNote, true);
     	listManager.getUnsynchronizedNotes().add(newNote.getGuid());
-    	noteTableView.insertRow(listManager, newNote, true);
+    	noteTableView.insertRow(listManager, newNote, true, -1);
     	
     	currentNote = newNote;
     	currentNoteGuid = currentNote.getGuid();
@@ -3488,7 +3478,7 @@ public class NeverNote extends QMainWindow{
 		listManager.addNote(newNote);
 		conn.getNoteTable().addNote(newNote, true);
 		listManager.getUnsynchronizedNotes().add(newNote.getGuid());
-		noteTableView.insertRow(listManager, newNote, true);
+		noteTableView.insertRow(listManager, newNote, true, -1);
 		listManager.countNotebookResults(listManager.getNoteIndex());
 		waitCursor(false);
 	}
@@ -3577,7 +3567,21 @@ public class NeverNote extends QMainWindow{
 		if (!oldGuid.equals(newGuid))
 			Global.resourceMap.put(oldGuid, newGuid);
 	}
-	
+	// View a thumbnail of the note
+	public void thumbnailView() {
+		
+		String thumbnailName = Global.currentDir+"res/thumbnail-"+currentNoteGuid+".png";
+		QFile thumbnail = new QFile(thumbnailName);
+		if (!thumbnail.exists()) {
+			
+			QImage img = new QImage();
+			img.loadFromData(conn.getNoteTable().getThumbnail(currentNoteGuid));
+			thumbnailViewer.setThumbnail(img);
+		} else
+			thumbnailViewer.setThumbnail(thumbnailName);
+		if (!thumbnailViewer.isVisible()) 
+			thumbnailViewer.showFullScreen();
+	}
 
 	//**********************************************************
     //**********************************************************
@@ -3806,6 +3810,30 @@ public class NeverNote extends QMainWindow{
 			        file.close();
 			        PDFPreview pdfPreview = new PDFPreview();
 					goodPreview = pdfPreview.setupPreview(file.fileName(), appl,0);
+					if (goodPreview) {
+						QDomElement span = doc.createElement("span");
+						QDomElement table = doc.createElement("table");
+						span.setAttribute("pdfNavigationTable", "true");
+						QDomElement tr = doc.createElement("tr");
+						QDomElement td = doc.createElement("td");
+						QDomElement left = doc.createElement("img");
+						left.setAttribute("onMouseDown", "window.jambi.nextPage('" +file.fileName() +"')");
+						left.setAttribute("onMouseDown", "window.jambi.nextPage('" +file.fileName() +"')");
+						left.setAttribute("onMouseOver", "style.cursor='hand'");
+						QDomElement right = doc.createElement("img");
+						right.setAttribute("onMouseDown", "window.jambi.nextPage('" +file.fileName() +"')");
+						left.setAttribute("onMouseDown", "window.jambi.previousPage('" +file.fileName() +"')");
+						left.setAttribute("src", Global.currentDir+"images/small_left.png");
+						right.setAttribute("src", Global.currentDir+"images/small_right.png");
+						right.setAttribute("onMouseOver", "style.cursor='hand'");
+						
+						table.appendChild(tr);
+						tr.appendChild(td);
+						td.appendChild(left);
+						td.appendChild(right);
+						span.appendChild(table);
+						enmedia.parentNode().insertBefore(span, enmedia);
+					} 
 					filePath = fileName+".png";
 				}
 				String icon = findIcon(appl);
@@ -3890,7 +3918,6 @@ public class NeverNote extends QMainWindow{
 		enmedia.setAttribute("onContextMenu", "window.jambi.imageContextMenu('" +tfile.fileName()  +"');");
 		enmedia.setNodeValue("");
 		enmedia.setAttribute("guid", resGuid);
-		//enmedia.setAttribute("style", "-webkit-transform: rotate(90deg); ");
 		enmedia.setTagName("img");
 
 		logger.log(logger.HIGH, "Leaving NeverNote.modifyImageTags");
@@ -3921,9 +3948,6 @@ public class NeverNote extends QMainWindow{
 					if (!type[0].equals("image")) {
 						modifyApplicationTags(doc, docElem, enmedia, hash, appl);
 					}
-//					if (type[0].equals("audio")) {
-//						modifyApplicationTags(doc, docElem, enmedia, hash, appl);
-//					}
 				}
 			}
 		}
@@ -4091,7 +4115,6 @@ public class NeverNote extends QMainWindow{
 //		noteTableView.selectionModel().selectionChanged.connect(this, "noteTableSelection()");
 //		indexRunner.setKeepRunning(Global.keepRunning);
 		
-		// Reload the unindexed table
 		listManager.setUnsynchronizedNotes(conn.getNoteTable().getUnsynchronizedGUIDs());
 		for (int i=0; i<noteTableView.model.rowCount(); i++) {
 			QModelIndex modelIndex =  noteTableView.model.index(i, Global.noteTableGuidPosition);
@@ -4296,13 +4319,6 @@ public class NeverNote extends QMainWindow{
 			"checking stopping NeverNote, saving the logs for later viewing, and restarting.  Sorry.");
 		} else
 			saveThreadDeadCount=0;
-
-		if (!dbThread.isAlive()) {
-			dbThreadDeadCount++;
-			QMessageBox.information(this, "A thread his died.", "It appears as the database thread has died.  I recommend "+
-			"checking stopping NeverNote, saving the logs for later viewing, and restarting.  Sorry.");
-		} else
-			dbThreadDeadCount=0;
 
 		if (!syncThread.isAlive()) {
 			syncThreadDeadCount++;
@@ -4612,7 +4628,7 @@ public class NeverNote extends QMainWindow{
 					listManager.addNote(newNote);
 					conn.getNoteTable().addNote(newNote, true);
 					listManager.getUnsynchronizedNotes().add(newNote.getGuid());
-					noteTableView.insertRow(listManager, newNote, true);
+					noteTableView.insertRow(listManager, newNote, true, -1);
 					listManager.updateNoteContent(newNote.getGuid(), importer.getNoteContent());
 					listManager.countNotebookResults(listManager.getNoteIndex());
 					importedFiles.add(list.get(i).absoluteFilePath());
@@ -4653,7 +4669,7 @@ public class NeverNote extends QMainWindow{
 				listManager.addNote(newNote);
 				conn.getNoteTable().addNote(newNote, true);
 				listManager.getUnsynchronizedNotes().add(newNote.getGuid());
-				noteTableView.insertRow(listManager, newNote, true);
+				noteTableView.insertRow(listManager, newNote, true, -1);
 				listManager.updateNoteContent(newNote.getGuid(), importer.getNoteContent());
 				listManager.countNotebookResults(listManager.getNoteIndex());
 				dir.remove(dir.at(i));
@@ -4776,6 +4792,7 @@ public class NeverNote extends QMainWindow{
 			position = browserWindow.getContent().indexOf("en-tag=\"en-media\" guid=\""+guid+"\" type=", position+1);
 		}
 	}
+
 
 	
 	

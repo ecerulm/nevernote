@@ -335,6 +335,8 @@ public class NSqlQuery {
 		try {
 			dataBinary = resultSet.getBlob(position+1);
 			byte[] b;
+			if (dataBinary == null)
+				return null;
 			b = dataBinary.getBytes(1, (int) dataBinary.length());
 			return b;
 		} catch (SQLException e) {

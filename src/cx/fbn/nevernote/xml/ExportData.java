@@ -35,6 +35,7 @@ import com.trolltech.qt.core.QFile;
 import com.trolltech.qt.core.QIODevice;
 import com.trolltech.qt.xml.QXmlStreamWriter;
 
+import cx.fbn.nevernote.Global;
 import cx.fbn.nevernote.sql.DatabaseConnection;
 import cx.fbn.nevernote.utilities.ApplicationLogger;
 import cx.fbn.nevernote.utilities.Pair;
@@ -169,7 +170,7 @@ public class ExportData {
 		else
 			writer.writeAttribute("exportType", "export");			
 		writer.writeAttribute("application", "NeverNote");
-		writer.writeAttribute("applicationVersion", "0.86");
+		writer.writeAttribute("applicationVersion", Global.version);
 		if (fullBackup) {
 			writer.writeStartElement("Synchronization");
 			long sequenceDate = conn.getSyncTable().getLastSequenceDate();

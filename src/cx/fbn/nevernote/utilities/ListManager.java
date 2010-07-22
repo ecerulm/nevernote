@@ -50,7 +50,6 @@ import cx.fbn.nevernote.signals.TagSignal;
 import cx.fbn.nevernote.signals.ThreadSignal;
 import cx.fbn.nevernote.signals.TrashSignal;
 import cx.fbn.nevernote.sql.DatabaseConnection;
-import cx.fbn.nevernote.sql.runners.NoteTagsRecord;
 import cx.fbn.nevernote.threads.CounterRunner;
 import cx.fbn.nevernote.threads.SaveRunner;
 
@@ -125,21 +124,21 @@ public class ListManager  {
 		reloadIndexes();
 		
  		notebookSignal = new NotebookSignal();
- 		notebookCounterRunner = new CounterRunner("notebook_counter.log", CounterRunner.NOTEBOOK);
+ 		notebookCounterRunner = new CounterRunner("notebook_counter.log", CounterRunner.NOTEBOOK, Global.getDatabaseUrl(), Global.getDatabaseUserid(), Global.getDatabaseUserPassword(), Global.cipherPassword);
  		notebookCounterRunner.setNoteIndex(getNoteIndex());
  		notebookCounterRunner.notebookSignal.countsChanged.connect(this, "setNotebookCounter(List)");
 		notebookThread = new QThread(notebookCounterRunner, "Notebook Counter Thread");
 		notebookThread.start();
- 		
+		
  		tagSignal = new TagSignal();
- 		tagCounterRunner = new CounterRunner("tag_counter.log", CounterRunner.TAG);
+ 		tagCounterRunner = new CounterRunner("tag_counter.log", CounterRunner.TAG, Global.getDatabaseUrl(), Global.getDatabaseUserid(), Global.getDatabaseUserPassword(), Global.cipherPassword);
  		tagCounterRunner.setNoteIndex(getNoteIndex());
  		tagCounterRunner.tagSignal.countsChanged.connect(this, "setTagCounter(List)");
 		tagThread = new QThread(tagCounterRunner, "Tag Counter Thread");
 		tagThread.start();
 		
  		trashSignal = new TrashSignal();
- 		trashCounterRunner = new CounterRunner("trash_counter.log", CounterRunner.TRASH);
+ 		trashCounterRunner = new CounterRunner("trash_counter.log", CounterRunner.TRASH, Global.getDatabaseUrl(), Global.getDatabaseUserid(), Global.getDatabaseUserPassword(), Global.cipherPassword);
  		trashCounterRunner.trashSignal.countChanged.connect(this, "trashSignalReceiver(Integer)");
 		trashThread = new QThread(trashCounterRunner, "Trash Counter Thread");
 		trashThread.start();
@@ -149,10 +148,10 @@ public class ListManager  {
 		tagSignal = new TagSignal();
 		
 		logger.log(logger.EXTREME, "Setting save thread");
-		saveRunner = new SaveRunner("saveRunner.log");
+		saveRunner = new SaveRunner("saveRunner.log", Global.getDatabaseUrl(), Global.getDatabaseUserid(), Global.getDatabaseUserPassword(), Global.cipherPassword);
 		saveThread = new QThread(saveRunner, "Save Runner Thread");
 		saveThread.start();
-		
+
 		loadNoteTitleColors();
 				
 	}
@@ -167,7 +166,6 @@ public class ListManager  {
 		try {
 			notebookThread.join();
 		} catch (InterruptedException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
  		}
 		
@@ -175,7 +173,6 @@ public class ListManager  {
 		try {
 			tagThread.join();
 		} catch (InterruptedException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
  		}
 
@@ -183,7 +180,6 @@ public class ListManager  {
 		try {
 			trashThread.join();
 		} catch (InterruptedException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
  		}
 
@@ -192,7 +188,6 @@ public class ListManager  {
 		try {
 			saveThread.join(0);
 		} catch (InterruptedException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
  		}
 
@@ -223,7 +218,7 @@ public class ListManager  {
 		masterNoteIndex = conn.getNoteTable().getAllNotes();
 		// For performance reasons, we didn't get the tags for every note individually.  We now need to 
 		// get them
-		List<NoteTagsRecord> noteTags = conn.getNoteTable().noteTagsTable.getAllNoteTags();
+		List<cx.fbn.nevernote.sql.NoteTagsRecord> noteTags = conn.getNoteTable().noteTagsTable.getAllNoteTags();
  		for (int i=0; i<masterNoteIndex.size(); i++) {
 			List<String> tags = new ArrayList<String>();
 			List<String> names = new ArrayList<String>();
@@ -257,20 +252,11 @@ public class ListManager  {
 		// Load notebooks
 		setNotebookIndex(conn.getNotebookTable().getAll());
 		// load archived notebooks (if note using the EN interface)
-//		if (!Global.mimicEvernoteInterface)
-			setArchiveNotebookIndex(conn.getNotebookTable().getAllArchived());
-//		else {
-//			setArchiveNotebookIndex(new ArrayList<Notebook>());
-//			List<Notebook> n = conn.getNotebookTable().getAllArchived();
-//			for (int i=0; i<n.size(); i++) {
-//				getNotebookIndex().add(n.get(i));
-//			}
-//		}
-
+		setArchiveNotebookIndex(conn.getNotebookTable().getAllArchived());
 		// load saved search index
 		setSavedSearchIndex(conn.getSavedSearchTable().getAll());
 		// Load search helper utility
-		enSearch = new EnSearch(id,  "", getTagIndex(), Global.getMinimumWordLength(), Global.getRecognitionWeight());
+		enSearch = new EnSearch(conn,  logger, "", getTagIndex(), Global.getMinimumWordLength(), Global.getRecognitionWeight());
 		logger.log(logger.HIGH, "Building note index");
 
 		if (masterNoteIndex == null) { 
@@ -278,7 +264,7 @@ public class ListManager  {
 		}
 		// For performance reasons, we didn't get the tags for every note individually.  We now need to 
 		// get them
-		List<NoteTagsRecord> noteTags = conn.getNoteTable().noteTagsTable.getAllNoteTags();
+		List<cx.fbn.nevernote.sql.NoteTagsRecord> noteTags = conn.getNoteTable().noteTagsTable.getAllNoteTags();
  		for (int i=0; i<masterNoteIndex.size(); i++) {
 			List<String> tags = new ArrayList<String>();
 			List<String> names = new ArrayList<String>();
@@ -402,7 +388,7 @@ public class ListManager  {
     //***************************************************************
     //***************************************************************
 	public void setEnSearch(String t) {
-		enSearch = new EnSearch(id, t, getTagIndex(), Global.getMinimumWordLength(), Global.getRecognitionWeight());
+		enSearch = new EnSearch(conn,logger, t, getTagIndex(), Global.getMinimumWordLength(), Global.getRecognitionWeight());
 		enSearchChanged = true;
 	}
 	// Save search tags
@@ -484,6 +470,7 @@ public class ListManager  {
 	}
 	// Delete a note
 	public void deleteNote(String guid) {
+		trashCounterRunner.abortCount = true;
 		Calendar currentTime = new GregorianCalendar();
 		Long l = new Long(currentTime.getTimeInMillis());
 		long prevTime = l;
@@ -511,7 +498,7 @@ public class ListManager  {
 	}
 	// Delete a note
 	public void restoreNote(String guid) {
-		
+		trashCounterRunner.abortCount = true;
 		for (int i=0; i<masterNoteIndex.size(); i++) {
 			if (masterNoteIndex.get(i).getGuid().equals(guid)) {
 				masterNoteIndex.get(i).setActive(true);
@@ -553,6 +540,7 @@ public class ListManager  {
 	}
 	// Expunge a note
 	public void expungeNote(String guid) {
+		trashCounterRunner.abortCount = true;
 		for (int i=0; i<masterNoteIndex.size(); i++) {
 			if (masterNoteIndex.get(i).getGuid().equals(guid)) {
 				masterNoteIndex.remove(i);
@@ -570,7 +558,7 @@ public class ListManager  {
 	}
 	// Expunge a note
 	public void emptyTrash() {
-				
+		trashCounterRunner.abortCount = true;		
 		for (int i=masterNoteIndex.size()-1; i>=0; i--) {
 			if (!masterNoteIndex.get(i).isActive()) {
 				masterNoteIndex.remove(i);
@@ -683,6 +671,33 @@ public class ListManager  {
 			}
 		}
 		conn.getNoteTable().updateNoteAuthor(guid, author);
+	}
+	// Author has changed
+	public void updateNoteGeoTag(String guid, Double lon, Double lat, Double alt) {
+		for (int i=0; i<masterNoteIndex.size(); i++) {
+			if (masterNoteIndex.get(i).getGuid().equals(guid)) {
+				masterNoteIndex.get(i).getAttributes().setLongitude(lon);
+				masterNoteIndex.get(i).getAttributes().setLongitudeIsSet(true);
+				masterNoteIndex.get(i).getAttributes().setLatitude(lat);
+				masterNoteIndex.get(i).getAttributes().setLatitudeIsSet(true);
+				masterNoteIndex.get(i).getAttributes().setAltitude(alt);
+				masterNoteIndex.get(i).getAttributes().setAltitudeIsSet(true);
+				i = masterNoteIndex.size();
+			}	
+		}
+		// Update the list tables 
+		for (int i=0; i<getNoteIndex().size(); i++) {
+			if (getNoteIndex().get(i).getGuid().equals(guid)) {
+				getNoteIndex().get(i).getAttributes().setLongitude(lon);
+				getNoteIndex().get(i).getAttributes().setLongitudeIsSet(true);
+				getNoteIndex().get(i).getAttributes().setLatitude(lat);
+				getNoteIndex().get(i).getAttributes().setLatitudeIsSet(true);
+				getNoteIndex().get(i).getAttributes().setAltitude(alt);
+				getNoteIndex().get(i).getAttributes().setAltitudeIsSet(true);
+				i = getNoteIndex().size();
+			}
+		}
+		conn.getNoteTable().updateNoteGeoTags(guid, lon, lat, alt);
 	}
 	// Author has changed
 	public void updateNoteSourceUrl(String guid, String url) {
@@ -896,6 +911,10 @@ public class ListManager  {
 	// Load the note index based upon what the user wants.
 	public void loadNotesIndex() {
 		logger.log(logger.EXTREME, "Entering ListManager.loadNotesIndex()");
+		tagCounterRunner.abortCount = true;
+		notebookCounterRunner.abortCount = true;
+		trashCounterRunner.abortCount = true;
+		
 		List<Note> index = new ArrayList<Note>();
 		
 		List<Note> matches;
@@ -985,6 +1004,9 @@ public class ListManager  {
 		return good;
 	}
 	private boolean filterByTag(List<String> noteTags) {
+		if (noteTags == null || selectedTags == null)
+			return true;
+		
 		if (selectedTags.size() == 0) 
 			return true;
 		

@@ -30,6 +30,7 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.GregorianCalendar;
+import java.util.HashMap;
 import java.util.List;
 
 import com.evernote.edam.limits.Constants;
@@ -56,6 +57,8 @@ import com.trolltech.qt.gui.QComboBox;
 import com.trolltech.qt.gui.QDateEdit;
 import com.trolltech.qt.gui.QDesktopServices;
 import com.trolltech.qt.gui.QFileDialog;
+import com.trolltech.qt.gui.QFileDialog.AcceptMode;
+import com.trolltech.qt.gui.QFileDialog.FileMode;
 import com.trolltech.qt.gui.QFontDatabase;
 import com.trolltech.qt.gui.QFormLayout;
 import com.trolltech.qt.gui.QGridLayout;
@@ -73,17 +76,16 @@ import com.trolltech.qt.gui.QShortcut;
 import com.trolltech.qt.gui.QTimeEdit;
 import com.trolltech.qt.gui.QVBoxLayout;
 import com.trolltech.qt.gui.QWidget;
-import com.trolltech.qt.gui.QFileDialog.AcceptMode;
-import com.trolltech.qt.gui.QFileDialog.FileMode;
 import com.trolltech.qt.network.QNetworkRequest;
 import com.trolltech.qt.webkit.QWebPage;
+import com.trolltech.qt.webkit.QWebPage.WebAction;
 import com.trolltech.qt.webkit.QWebSettings;
 import com.trolltech.qt.webkit.QWebView;
-import com.trolltech.qt.webkit.QWebPage.WebAction;
 
 import cx.fbn.nevernote.Global;
 import cx.fbn.nevernote.dialog.EnCryptDialog;
 import cx.fbn.nevernote.dialog.EnDecryptDialog;
+import cx.fbn.nevernote.dialog.GeoDialog;
 import cx.fbn.nevernote.dialog.InsertLinkDialog;
 import cx.fbn.nevernote.dialog.TableDialog;
 import cx.fbn.nevernote.dialog.TagAssign;
@@ -99,6 +101,7 @@ public class BrowserWindow extends QWidget {
 	private final QLineEdit urlText;
 	private final QLabel authorLabel;
 	private final QLineEdit authorText;
+	private final QComboBox geoBox;
 	public final TagLineEdit tagEdit;
 	public final QLabel tagLabel;
 	private final QLabel urlLabel;
@@ -171,7 +174,10 @@ public class BrowserWindow extends QWidget {
 	private boolean forceTextPaste = false;
 	private String selectedFile;
 	private String currentHyperlink;
+	public boolean keepPDFNavigationHidden;
 	private final ApplicationLogger logger;
+	
+	private final HashMap<String,Integer> previewPageList; 
 	
 	
 	public BrowserWindow(DatabaseConnection c) {
@@ -185,6 +191,7 @@ public class BrowserWindow extends QWidget {
 		titleLabel.setMaxLength(Constants.EDAM_NOTE_TITLE_LEN_MAX);
 		urlText = new QLineEdit();
 		authorText = new QLineEdit();
+		geoBox = new QComboBox();
 		urlLabel = new QLabel();
 		authorLabel = new QLabel();
 		conn = c;
@@ -234,6 +241,14 @@ public class BrowserWindow extends QWidget {
 		urlLabel.setVisible(false);
 		urlText.setVisible(false);
 		authorLabel.setVisible(false);
+		
+		geoBox.setVisible(false);
+		geoBox.addItem(new QIcon(iconPath+"globe.png"), "");
+		geoBox.addItem(new String("Set"));
+		geoBox.addItem(new String("Clear"));
+		geoBox.addItem(new String("View On Map"));
+		geoBox.activated.connect(this, "geoBoxChanged()");
+		
 		authorText.setVisible(false);
 		createdDate.setVisible(false);
 		alteredLabel.setVisible(false);
@@ -286,6 +301,7 @@ public class BrowserWindow extends QWidget {
 		QHBoxLayout authorLayout = new QHBoxLayout();
 		authorLayout.addWidget(authorLabel, 0);
 		authorLayout.addWidget(authorText, 0);
+		authorLayout.addWidget(geoBox);
 		v.addLayout(authorLayout);
 
 		dateLayout.addWidget(createdLabel, 0, 0);
@@ -415,6 +431,8 @@ public class BrowserWindow extends QWidget {
 		browser.page().mainFrame().setTextSizeMultiplier(Global.getTextSizeMultiplier());
 		browser.page().mainFrame().setZoomFactor(Global.getZoomFactor());
 		
+		 previewPageList = new HashMap<String,Integer>();
+		
 		browser.page().microFocusChanged.connect(this, "microFocusChanged()");
 		logger.log(logger.HIGH, "Browser setup complete");
 	}
@@ -462,6 +480,7 @@ public class BrowserWindow extends QWidget {
 		notebookBox.setEnabled(!v);
 		tagEdit.setEnabled(!v);
 		authorLabel.setEnabled(!v);
+		geoBox.setEnabled(!v);
 		urlText.setEnabled(!v);
 		createdDate.setEnabled(!v);
 		subjectDate.setEnabled(!v);
@@ -592,6 +611,7 @@ public class BrowserWindow extends QWidget {
 		urlLabel.setVisible(extendedOn);
 		urlText.setVisible(extendedOn);
 		authorText.setVisible(extendedOn);
+		geoBox.setVisible(extendedOn);
 		authorLabel.setVisible(extendedOn);
 		createdDate.setVisible(extendedOn);
 		createdTime.setVisible(extendedOn);
@@ -1844,6 +1864,42 @@ public class BrowserWindow extends QWidget {
 	private void authorChanged() {
 		noteSignal.authorChanged.emit(currentNote.getGuid(), authorText.text());
 	}
+	
+	private void geoBoxChanged() {
+		int index = geoBox.currentIndex();
+		geoBox.setCurrentIndex(0);
+		if (index == 1) {
+			GeoDialog box = new GeoDialog();
+			box.setLongitude(currentNote.getAttributes().getLongitude());
+			box.setLatitude(currentNote.getAttributes().getLatitude());
+			box.setAltitude(currentNote.getAttributes().getAltitude());
+			box.exec();
+			if (!box.okPressed())
+				return;
+			double alt = box.getAltitude();
+			double lat = box.getLatitude();
+			double lon = box.getLongitude();
+			if (alt != currentNote.getAttributes().getAltitude() ||
+				lon != currentNote.getAttributes().getLongitude() ||
+				lat != currentNote.getAttributes().getLatitude()) {
+					noteSignal.geoChanged.emit(currentNote.getGuid(), lon, lat, alt);
+					currentNote.getAttributes().setAltitude(alt);
+					currentNote.getAttributes().setLongitude(lon);
+					currentNote.getAttributes().setLatitude(lat);
+			}
+		}
+		
+		if (index == 2) {
+			noteSignal.geoChanged.emit(currentNote.getGuid(), 0.0, 0.0, 0.0);
+			currentNote.getAttributes().setAltitude(0.0);
+			currentNote.getAttributes().setLongitude(0.0);
+			currentNote.getAttributes().setLatitude(0.0);
+		}
+		
+		if (index == 3 || index == 0) {
+			QDesktopServices.openUrl(new QUrl("http://maps.google.com/maps?z=6&q="+currentNote.getAttributes().getLatitude() +"," +currentNote.getAttributes().getLongitude()));
+		}
+	}
 
 	// ************************************************************
 	// * User chose to save an attachment. Pares out the request *
@@ -2145,13 +2201,12 @@ public class BrowserWindow extends QWidget {
 		matrix.rotate( 90.0 );
 		image = image.transformed(matrix);
 		image.save(selectedFile);
-		String html = getContent();
-		browser.setContent(new QByteArray());
+		QWebSettings.setMaximumPagesInCache(0);
+		QWebSettings.setObjectCacheCapacities(0, 0, 0);
+		browser.setHtml(browser.page().mainFrame().toHtml());
 		browser.reload();
-		browser.setContent(new QByteArray(html));
-		browser.triggerPageAction(WebAction.Reload);
 		contentChanged();
-		resourceSignal.contentChanged.emit(selectedFile);
+//		resourceSignal.contentChanged.emit(selectedFile);
 
 	}
 	public void rotateImageLeft() {
@@ -2160,13 +2215,10 @@ public class BrowserWindow extends QWidget {
 		matrix.rotate( -90.0 );
 		image = image.transformed(matrix);
 		image.save(selectedFile);
-		String html = getContent();
-		browser.setContent(new QByteArray());
+		browser.setHtml(browser.page().mainFrame().toHtml());
 		browser.reload();
-		browser.setContent(new QByteArray(html));
-		browser.triggerPageAction(WebAction.Reload);
 		contentChanged();
-		resourceSignal.contentChanged.emit(selectedFile);
+//		resourceSignal.contentChanged.emit(selectedFile);
 	}
 	public void resourceContextMenu(String f) {
 		browser.downloadAttachment.setEnabled(true);
@@ -2262,4 +2314,86 @@ public class BrowserWindow extends QWidget {
 		}
 		return text;
 	}
+
+
+	public void nextPage(String file) {
+		logger.log(logger.EXTREME, "Starting nextPage()");
+		
+		Integer pageNumber;
+		if (previewPageList.containsKey(file))
+			pageNumber = previewPageList.get(file)+1;
+		else
+			pageNumber = 2;
+		previewPageList.remove(file);
+		previewPageList.put(file, pageNumber);
+		PDFPreview pdfPreview = new PDFPreview();
+		boolean goodPreview = pdfPreview.setupPreview(file, "pdf", pageNumber);
+		if (goodPreview) {
+
+//			String html = getContent();
+			QWebSettings.setMaximumPagesInCache(0);
+			QWebSettings.setObjectCacheCapacities(0, 0, 0);
+//			browser.setContent(new QByteArray());
+			browser.setHtml(browser.page().mainFrame().toHtml());
+			browser.reload();
+//			browser.setContent(new QByteArray(html));
+//			browser.triggerPageAction(WebAction.Reload);
+//			pdfMouseOver(selectedFile);
+		}
+	}
+
+	public void previousPage(String file) {
+		logger.log(logger.EXTREME, "Starting previousPage()");
+		
+		Integer pageNumber;
+		if (previewPageList.containsKey(file))
+			pageNumber = previewPageList.get(file)-1;
+		else
+			pageNumber = 1;
+		previewPageList.remove(file);
+		previewPageList.put(file, pageNumber);
+		PDFPreview pdfPreview = new PDFPreview();
+		boolean goodPreview = pdfPreview.setupPreview(file, "pdf", pageNumber);
+		if (goodPreview) {
+
+//			String html = getContent();
+			QWebSettings.setMaximumPagesInCache(0);
+			QWebSettings.setObjectCacheCapacities(0, 0, 0);
+			browser.setHtml(browser.page().mainFrame().toHtml());
+			browser.reload();
+//			browser.setContent(new QByteArray(html));
+//			browser.triggerPageAction(WebAction.Reload);
+		}
+	}
+	
+/*	public void pdfMouseOver(String name) { 
+		int pageNumber;
+		if (previewPageList.containsKey(selectedFile))
+			pageNumber = previewPageList.get(selectedFile)+1;
+		else
+			pageNumber = 1;
+		
+		if (pageNumber <= 1)
+			browser.previousPageAction.setEnabled(false);
+		else
+			browser.previousPageAction.setEnabled(true);
+		
+		PDFPreview pdf = new PDFPreview();
+		int totalPages = pdf.getPageCount(name);
+		if (previewPageList.containsKey(selectedFile))
+			pageNumber = previewPageList.get(selectedFile)+1;
+		else
+			pageNumber = 1;
+		if (totalPages > pageNumber)
+			browser.nextPageAction.setEnabled(true);
+		else
+			browser.nextPageAction.setEnabled(false);
+	}
+	
+
+	public void pdfMouseOut() { 
+//		browser.nextPageAction.setVisible(false);
+//		browser.previousPageAction.setVisible(false);
+	}
+*/
 }

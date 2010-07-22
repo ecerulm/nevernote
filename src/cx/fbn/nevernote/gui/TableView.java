@@ -27,6 +27,7 @@ import com.trolltech.qt.core.QByteArray;
 import com.trolltech.qt.core.QDateTime;
 import com.trolltech.qt.core.QModelIndex;
 import com.trolltech.qt.core.Qt;
+import com.trolltech.qt.core.Qt.SortOrder;
 import com.trolltech.qt.gui.QAbstractItemView;
 import com.trolltech.qt.gui.QAction;
 import com.trolltech.qt.gui.QApplication;
@@ -84,7 +85,6 @@ public class TableView extends QTableView {
 		header = horizontalHeader();
 		header.setMovable(true);
 		
-//		setMouseTracking(true);
 		noteSignal = new NoteSignal();
 		setAcceptDrops(true);
 		setDragEnabled(true);
@@ -105,15 +105,16 @@ public class TableView extends QTableView {
         model.setHeaderData(Global.noteTableSynchronizedPosition, Qt.Orientation.Horizontal, "Synchronized");
         header.sortIndicatorChanged.connect(this, "resetViewport()");
        
-        
         proxyModel = new NoteSortFilterProxyModel(this);
         proxyModel.setSourceModel(model);
-        proxyModel.setDynamicSortFilter(true); 
         
         setAlternatingRowColors(false);
-        setSortingEnabled(true);
-        sortByColumn(0, Qt.SortOrder.AscendingOrder);
         setModel(proxyModel);
+        
+        setSortingEnabled(true);
+        int sortCol = proxyModel.sortColumn();
+		SortOrder sortOrder = proxyModel.sortOrder();
+		sortByColumn(sortCol, sortOrder);
 
 		setSelectionBehavior(SelectionBehavior.SelectRows);
 		setSelectionMode(SelectionMode.SingleSelection);
@@ -140,20 +141,18 @@ public class TableView extends QTableView {
 	
 		
 	public void load(ListManager runner, boolean reload) {
+
 		proxyModel.clear();
-		setSortingEnabled(false);
-			for (int i=0; i<runner.getNoteIndex().size(); i++) {
+		setSortingEnabled(true);
+		for (int i=0; i<runner.getNoteIndex().size(); i++) {
 			if (Global.showDeleted == true && !runner.getNoteIndex().get(i).isActive())
 				proxyModel.addGuid(runner.getNoteIndex().get(i).getGuid());
 			if (!Global.showDeleted == true && runner.getNoteIndex().get(i).isActive())			
 				proxyModel.addGuid(runner.getNoteIndex().get(i).getGuid());
-
 		}
 		if (!reload) {
 			logger.log(logger.EXTREME, "TableView.load() reload starting.");
 			proxyModel.filter();
-			logger.log(logger.EXTREME, "TableView.load() Enabling Sorting");
-			setSortingEnabled(true);
 			logger.log(logger.EXTREME, "TableView.load() leaving reload.");
 			QFontMetrics f = QApplication.fontMetrics();
 			fontHeight = f.height();
@@ -163,17 +162,16 @@ public class TableView extends QTableView {
 			return;
 		}
 		logger.log(logger.EXTREME, "TableView.load() Filling table data from scratch");
-
-		for (int i=model.rowCount(); i>=0; i--) 
-			model.removeRow(i);
+		model.setRowCount(runner.getMasterNoteIndex().size());
 		
 		for (int i=0; i<runner.getMasterNoteIndex().size(); i++) {
-			Note tempNote = null;
-			tempNote = runner.getMasterNoteIndex().get(i);
-			if (tempNote != null) {	
-				insertRow(runner, tempNote, false);							
+			if (runner.getMasterNoteIndex().get(i) != null) {	
+				insertRow(runner, runner.getMasterNoteIndex().get(i), false, i);							
 			}
 		}
+		
+
+		
 		int width;
 		width = Global.getColumnWidth("noteTableCreationPosition");
 		if (width>0) setColumnWidth(Global.noteTableCreationPosition, width);
@@ -233,12 +231,16 @@ public class TableView extends QTableView {
 		if (to>=0) header.moveSection(from, to);
 
 		proxyModel.filter();
-		setSortingEnabled(true);
+		
+		QFontMetrics f = QApplication.fontMetrics();
+		fontHeight = f.height();
+		for (int i=0; i<model.rowCount(); i++)
+			setRowHeight(i, fontHeight);
 		
 		resetViewport.emit();
 	}
 
-	public void insertRow(ListManager runner, Note tempNote, boolean newNote) {
+	public void insertRow(ListManager runner, Note tempNote, boolean newNote, int row) {
 		if (newNote)
 			proxyModel.addGuid(tempNote.getGuid());
 		String fmt = Global.getDateFormat() + " " + Global.getTimeFormat();
@@ -254,17 +256,24 @@ public class TableView extends QTableView {
 			subjectDate = creationDate;
 		else
 			subjectDate = new StringBuilder(simple.format(tempNote.getAttributes().getSubjectDate()));
-//		logger.log(logger.EXTREME, tempNote.getTitle().trim());
 
-		String synch = "true";
+		String sync = "true";
 		for (int i=0; i<runner.getUnsynchronizedNotes().size(); i++) {
 			if (runner.getUnsynchronizedNotes().get(i).equalsIgnoreCase(tempNote.getGuid())) {
-				synch = "false";
+				sync = "false";
 				i = runner.getUnsynchronizedNotes().size();
 			}
 		}	
 				
-		model.insertRow(0);
+		if (row > model.rowCount())
+			model.insertRow(0);
+		
+		if (row < 0) {
+			row  = model.rowCount();
+			model.insertRow(row);
+//			row = model.rowCount()-1;
+		}
+
 		QColor backgroundColor = new QColor(QColor.white);
 		QColor foregroundColor = new QColor(QColor.black);
 		
@@ -279,28 +288,28 @@ public class TableView extends QTableView {
 		QDateTime created = QDateTime.fromString(creationDate.toString(), fmt);
 		QDateTime changed = QDateTime.fromString(changedDate.toString(), fmt);
 		QDateTime subjectDateFormat = QDateTime.fromString(subjectDate.toString(), fmt);
-		model.setData(model.index(0, Global.noteTableCreationPosition), created.toString(fmt));
-		model.setData(model.index(0, Global.noteTableChangedPosition), changed.toString(fmt));
-		model.setData(model.index(0, Global.noteTableTitlePosition), tempNote.getTitle());
-		model.setData(model.index(0, Global.noteTableTagPosition), tagNames);
-		model.setData(model.index(0, Global.noteTableGuidPosition), tempNote.getGuid());
-		model.setData(model.index(0, Global.noteTableSubjectDatePosition), subjectDateFormat.toString(fmt));
-		model.setData(model.index(0, Global.noteTableAuthorPosition), tempNote.getAttributes().getAuthor());
-		model.setData(model.index(0, Global.noteTableSourceUrlPosition), tempNote.getAttributes().getSourceURL());
-		model.setData(model.index(0, Global.noteTableNotebookPosition), runner.getNotebookNameByGuid(tempNote.getNotebookGuid()));
-		model.setData(model.index(0, Global.noteTableSynchronizedPosition), synch);
+		model.setData(model.index(row, Global.noteTableCreationPosition), created.toString(fmt));
+		model.setData(model.index(row, Global.noteTableChangedPosition), changed.toString(fmt));
+		model.setData(model.index(row, Global.noteTableTitlePosition), tempNote.getTitle());
+		model.setData(model.index(row, Global.noteTableTagPosition), tagNames);
+		model.setData(model.index(row, Global.noteTableGuidPosition), tempNote.getGuid());
+		model.setData(model.index(row, Global.noteTableSubjectDatePosition), subjectDateFormat.toString(fmt));
+		model.setData(model.index(row, Global.noteTableAuthorPosition), tempNote.getAttributes().getAuthor());
+		model.setData(model.index(row, Global.noteTableSourceUrlPosition), tempNote.getAttributes().getSourceURL());
+		model.setData(model.index(row, Global.noteTableNotebookPosition), runner.getNotebookNameByGuid(tempNote.getNotebookGuid()));
+		model.setData(model.index(row, Global.noteTableSynchronizedPosition), sync);
 		
 		for (int i=0; i<Global.noteTableColumnCount; i++) {
-			model.setData(0, i, backgroundColor, Qt.ItemDataRole.BackgroundRole);
-			model.setData(0, i, foregroundColor, Qt.ItemDataRole.ForegroundRole);
+			model.setData(row, i, backgroundColor, Qt.ItemDataRole.BackgroundRole);
+			model.setData(row, i, foregroundColor, Qt.ItemDataRole.ForegroundRole);
+		}		
+		
+		if (newNote) {
+			QFontMetrics f = QApplication.fontMetrics();
+			fontHeight = f.height();
+			for (int i=0; i<model.rowCount(); i++)
+				setRowHeight(i, fontHeight);
 		}
-		
-		
-		QFontMetrics f = QApplication.fontMetrics();
-		fontHeight = f.height();
-		for (int i=0; i<model.rowCount(); i++)
-			setRowHeight(i, fontHeight);
-		
 	}
 	protected boolean filterAcceptsRow(int sourceRow, QModelIndex sourceParent) {
 		return true;

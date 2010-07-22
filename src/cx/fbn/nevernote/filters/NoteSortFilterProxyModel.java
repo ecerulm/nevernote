@@ -33,24 +33,23 @@ import cx.fbn.nevernote.Global;
 public class NoteSortFilterProxyModel extends QSortFilterProxyModel {
 	private final Map<String,String> guids;
 	private String dateFormat;
-	private int sortColumn;
 	
 	public NoteSortFilterProxyModel(QObject parent) {
 		super(parent);
 		guids = new HashMap<String,String>();
 		dateFormat = Global.getDateFormat() + " " + Global.getTimeFormat();
-		sortColumn = sortColumn();
+		setDynamicSortFilter(true);
 //		logger = new ApplicationLogger("filter.log");
 	}
 	public void clear() {
 		guids.clear();
 	}
 	public void addGuid(String guid) {
-		guids.put(guid, null);
+//		if (!guids.containsKey(guid))
+			guids.put(guid, null);
 	}
 	public void filter() {
 		dateFormat = Global.getDateFormat() + " " + Global.getTimeFormat();
-		sortColumn = sortColumn();
 		invalidateFilter();
 	}
 	@Override
@@ -71,11 +70,10 @@ public class NoteSortFilterProxyModel extends QSortFilterProxyModel {
 	protected boolean lessThan(QModelIndex left, QModelIndex right) {
 		Object leftData = sourceModel().data(left);
 		Object rightData = sourceModel().data(right);
-		sortColumn = sortColumn();
 		
-		if (sortColumn == Global.noteTableCreationPosition || 
-				sortColumn == Global.noteTableChangedPosition ||
-				sortColumn == Global.noteTableSubjectDatePosition) {
+		if (sortColumn() == Global.noteTableCreationPosition || 
+				sortColumn() == Global.noteTableChangedPosition ||
+				sortColumn() == Global.noteTableSubjectDatePosition) {
 			QDateTime leftDate = QDateTime.fromString(leftData.toString(), dateFormat);
 			QDateTime rightDate = QDateTime.fromString(rightData.toString(), dateFormat);
 			return leftDate.compareTo(rightDate) < 0;

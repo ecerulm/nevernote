@@ -70,6 +70,7 @@ public class ShortcutKeys {
 	public String Edit_Rotate_Image_Left;		// Rotate an image left
 
 	public String View_Extended_Information;	// View details on the current note
+	public String View_Thumbnail;				// View Image Thumbnail
 	public String View_Show_Note_List;			// Show current notes
 	public String View_Show_Notebooks;			// Show notebooks
 	public String View_Show_Tags;				// Show the tags window
@@ -163,6 +164,7 @@ public class ShortcutKeys {
 		Edit_Rotate_Image_Left = new String();
 
 		View_Extended_Information = new String("F8");	// View details on the current note
+		View_Thumbnail = new String();				// View the thumbnail
 		View_Show_Note_List = new String("F10");	// Show current notes
 		View_Show_Notebooks = new String();			// Show notebooks
 		View_Show_Tags = new String();				// Show the tags window
@@ -237,6 +239,7 @@ public class ShortcutKeys {
 		loadKey("Edit_Rotate_Image_Left", Edit_Rotate_Image_Left);
 		
 		loadKey("View_Extended_Information", View_Extended_Information);
+		loadKey("View_Thumbnail", View_Thumbnail);
 		loadKey("View_Show_Note_List", View_Show_Note_List);
 		loadKey("View_Show_Left_Side",View_Show_Left_Side);
 		

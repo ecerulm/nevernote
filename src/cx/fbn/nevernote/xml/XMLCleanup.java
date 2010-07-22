@@ -278,6 +278,9 @@ public class XMLCleanup {
 				QDomText newText = doc.createTextNode(e.text());
 				e.parentNode().replaceChild(newText,e);
 			}
+			if (e.attribute("pdfnavigationtable").equalsIgnoreCase("true")) {
+				node.parentNode().removeChild(node);
+			}
 		}
 	}
 

@@ -37,7 +37,6 @@ import cx.fbn.nevernote.signals.NotebookSignal;
 import cx.fbn.nevernote.signals.TagSignal;
 import cx.fbn.nevernote.signals.TrashSignal;
 import cx.fbn.nevernote.sql.DatabaseConnection;
-import cx.fbn.nevernote.sql.runners.NoteTagsRecord;
 import cx.fbn.nevernote.utilities.ApplicationLogger;
 import cx.fbn.nevernote.utilities.Pair;
 
@@ -63,17 +62,22 @@ public class CounterRunner extends QObject implements Runnable {
 	public static int					NOTEBOOK_ALL = 5;
 	
 	public boolean 						ready = false;
+	public boolean						abortCount = false;
+	private final DatabaseConnection 					conn;
+
 	private volatile LinkedBlockingQueue<Integer> readyQueue = new LinkedBlockingQueue<Integer>();
 	
 	
 	//*********************************************
 	//* Constructor                               *
 	//*********************************************
-	public CounterRunner(String logname, int t) {
+	public CounterRunner(String logname, int t, String u, String uid, String pswd, String cpswd) {
 		type = t;
+
 		threadLock = new QMutex();
 		logger = new ApplicationLogger(logname);
 //		setAutoDelete(false);	
+		conn = new DatabaseConnection(logger, u, uid, pswd, cpswd);
 		keepRunning = true;
 		notebookSignal = new NotebookSignal();
 		tagSignal = new TagSignal();
@@ -115,12 +119,15 @@ public class CounterRunner extends QObject implements Runnable {
 				threadLock.unlock();
 			} catch (InterruptedException e) {}
 		}
+		conn.dbShutdown();
 	}
 	
 	
 	
 	public void setNoteIndex(List<Note> idx) {
+		abortCount = true;
 		threadLock.lock();
+		abortCount = false;
 		notebookIndex.clear();
 		activeIndex.clear();
 		noteIndex.clear();
@@ -160,33 +167,60 @@ public class CounterRunner extends QObject implements Runnable {
 	//* Do the actual counting                    *
 	//*********************************************
 	private void countNotebookResults() {
-		logger.log(logger.EXTREME, "Entering ListManager.countTagResults");		
-		DatabaseConnection conn = new DatabaseConnection(logger, Global.tagCounterThreadId);
+		logger.log(logger.EXTREME, "Entering ListManager.countNotebookResults");		
+		if (abortCount)
+			return;
 		List<NotebookCounter> nCounter = new ArrayList<NotebookCounter>();
+		if (abortCount)
+			return;
 		List<Notebook> books = conn.getNotebookTable().getAll();
 				
+		if (abortCount)
+			return;
+
 		if (type == NOTEBOOK_ALL) {
 			for (int i=0; i<books.size(); i++) {
+				if (abortCount)
+					return;
+
 				nCounter.add(new NotebookCounter());
 				nCounter.get(i).setCount(0);
 				nCounter.get(i).setGuid(books.get(i).getGuid());
 			}
+			if (abortCount)
+				return;
 			List<Pair<String, Integer>> notebookCounts = conn.getNotebookTable().getNotebookCounts();
+			if (abortCount)
+				return;
 			for (int i=0; notebookCounts != null && i<notebookCounts.size(); i++) {
+				if (abortCount)
+					return;
 				for (int j=0; j<nCounter.size(); j++) {
+					if (abortCount)
+						return;
+
 					if (notebookCounts.get(i).getFirst().equals(nCounter.get(j).getGuid())) {
 						nCounter.get(j).setCount(notebookCounts.get(i).getSecond());
 						j=nCounter.size();
 					}
 				}
 			}
+			if (abortCount)
+				return;
+
 			notebookSignal.countsChanged.emit(nCounter);
 			return;
 		}
 		
+		if (abortCount)
+			return;
 		for (int i=notebookIndex.size()-1; i>=0 && keepRunning; i--) {
+			if (abortCount)
+				return;
 			boolean notebookFound = false;
 			for (int j=0; j<nCounter.size() && keepRunning; j++) {
+				if (abortCount)
+					return;
 				if (nCounter.get(j).getGuid().equals(notebookIndex.get(i))) {
 					notebookFound = true;
 					if (activeIndex.get(i)) {
@@ -196,6 +230,8 @@ public class CounterRunner extends QObject implements Runnable {
 					j=nCounter.size();
 				}
 			}
+			if (abortCount)
+				return;
 			if (!notebookFound) {
 				NotebookCounter newCounter = new NotebookCounter();
 				newCounter.setGuid(notebookIndex.get(i));
@@ -203,6 +239,8 @@ public class CounterRunner extends QObject implements Runnable {
 				nCounter.add(newCounter);
 			}
 		}
+		if (abortCount)
+			return;
 		notebookSignal.countsChanged.emit(nCounter);
 		logger.log(logger.EXTREME, "Leaving ListManager.countNotebookResults()");
 	}
@@ -210,10 +248,11 @@ public class CounterRunner extends QObject implements Runnable {
 	
 	private void countTagResults() {
 		logger.log(logger.EXTREME, "Entering ListManager.countTagResults");		
-		DatabaseConnection conn = new DatabaseConnection(logger, Global.tagCounterThreadId);
 		List<TagCounter> counter = new ArrayList<TagCounter>();
 		List<Tag> allTags = conn.getTagTable().getAll();
 		
+		if (abortCount) 
+			return;
 		if (allTags == null)
 			return;
 		for (int k=0; k<allTags.size() && keepRunning; k++) {
@@ -225,25 +264,43 @@ public class CounterRunner extends QObject implements Runnable {
 		
 		if (type == TAG_ALL) {
 			List<Pair<String, Integer>> tagCounts = conn.getNoteTable().noteTagsTable.getTagCounts();
+			if (abortCount)
+				return;
 			for (int i=0; tagCounts != null &&  i<tagCounts.size(); i++) {
+				if (abortCount)
+					return;
 				for (int j=0; j<counter.size(); j++) {
+					if (abortCount)
+						return;
 					if (tagCounts.get(i).getFirst().equals(counter.get(j).getGuid())) {
+						if (abortCount)
+							return;
 						counter.get(j).setCount(tagCounts.get(i).getSecond());
 						j=counter.size();
 					}
 				}
 			}
+			if (abortCount)
+				return;
 			tagSignal.countsChanged.emit(counter);
 			return;
 		}
 		
 		
-		List<NoteTagsRecord> tags = conn.getNoteTable().noteTagsTable.getAllNoteTags();
+		if (abortCount)
+			return;
+		List<cx.fbn.nevernote.sql.NoteTagsRecord> tags = conn.getNoteTable().noteTagsTable.getAllNoteTags();
 		for (int i=noteIndex.size()-1; i>=0; i--) {
+			if (abortCount)
+				return;
 			String note = noteIndex.get(i);
-			for (int x=0; x<tags.size() && keepRunning; x++) {
+			for (int x=0; tags!= null && x<tags.size() && keepRunning; x++) {
+				if (abortCount)
+					return;
 				String tag = tags.get(x).tagGuid;
 				for (int j=0; j<counter.size() && keepRunning; j++) {
+					if (abortCount)
+						return;
 					if (counter.get(j).getGuid().equals(tag) && note.equals(tags.get(x).noteGuid)) {
 						int c = counter.get(j).getCount()+1;
 						counter.get(j).setCount(c);
@@ -251,6 +308,8 @@ public class CounterRunner extends QObject implements Runnable {
 				}
 			}
 		}
+		if (abortCount)
+			return;
 		tagSignal.countsChanged.emit(counter);
 		logger.log(logger.EXTREME, "Leaving ListManager.countTagResults()");
 	}
@@ -258,8 +317,14 @@ public class CounterRunner extends QObject implements Runnable {
 	
 	private void countTrashResults() {
 		logger.log(logger.EXTREME, "Entering CounterRunner.countTrashResults()");		
-		DatabaseConnection conn = new DatabaseConnection(logger, Global.trashCounterThreadId);
+		if (abortCount)
+			return;
+
 		Integer tCounter = conn.getNoteTable().getDeletedCount();
+		
+		if (abortCount)
+			return;
+
 		trashSignal.countChanged.emit(tCounter);
 		logger.log(logger.EXTREME, "Leaving CounterRunner.countTrashResults()");
 	}

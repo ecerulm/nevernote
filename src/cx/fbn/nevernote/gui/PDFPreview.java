@@ -35,6 +35,20 @@ import com.sun.pdfview.PDFPage;
 
 public class PDFPreview {
 
+	public int getPageCount(String filePath) {
+		File file = new File(filePath);
+		RandomAccessFile raf;
+		try {
+			raf = new RandomAccessFile(file, "r");
+			FileChannel channel = raf.getChannel();
+			ByteBuffer buf = channel.map(FileChannel.MapMode.READ_ONLY, 0, channel.size());
+			PDFFile pdffile = new PDFFile(buf);
+			return pdffile.getNumPages();
+		} catch (Exception e) {
+			return 0;
+		}
+		
+	}
 	
     // Setup the preview for PDFs
     public boolean setupPreview(String filePath, String appl, int pageNumber) {
@@ -70,7 +84,11 @@ public class PDFPreview {
     			ImageIcon icon = new ImageIcon(img);
     			BufferedImage bi = new BufferedImage(icon.getIconWidth(), icon.getIconHeight(), BufferedImage.TYPE_INT_RGB);
     			bi.getGraphics().drawImage(icon.getImage(), 0, 0, null);
-    			File outputfile = new File(filePath +".png");
+    			File outputfile;
+//    			if (pageNumber == 0)
+    				outputfile = new File(filePath +".png");
+//    			else
+//    				outputfile = new File(filePath+"-page-"+pageNumber+".png");
     			ImageIO.write(bi, "png", outputfile);
     			return true;
     		} catch (Exception e) {}

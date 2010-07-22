@@ -61,6 +61,7 @@ public class MainMenuBar extends QMenuBar {
 	public QAction			editPasteWithoutFormat;		// Paste selected text
 	public QAction			editCopy;					// Copy selected text;
 	
+	public QAction			thumbnailView;				// view thumbnails
 	public QAction			hideSavedSearches;			// show/hide saved searches
 	public QAction			hideNotebooks;				// show/hide notebooks
 	public QAction			hideTags;					// show/hide tags
@@ -289,6 +290,11 @@ public class MainMenuBar extends QMenuBar {
 		hideNotebooks.setChecked(true);
 		setupShortcut(hideNotebooks, "View_Show_Notebooks");
 
+		thumbnailView = new QAction(tr("Preview"), this);
+		thumbnailView.setToolTip("Preview Notes");
+		thumbnailView.triggered.connect(parent, "thumbnailView()");
+		setupShortcut(thumbnailView, "View_Thumbnail");
+		
 		hideSavedSearches = new QAction(tr("Show Saved Searches"), this);
 		hideSavedSearches.setToolTip("Show/Hide Saved Searches");
 		hideSavedSearches.triggered.connect(parent, "toggleSavedSearchWindow()");
@@ -566,6 +572,8 @@ public class MainMenuBar extends QMenuBar {
 		
 		viewMenu = addMenu("&View");
 		viewMenu.addAction(noteAttributes);
+		viewMenu.addSeparator();
+		viewMenu.addAction(thumbnailView);
 		viewMenu.addSeparator();
 		viewMenu.addAction(hideNoteList);
 		viewMenu.addAction(hideNotebooks);

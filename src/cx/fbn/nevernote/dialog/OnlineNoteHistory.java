@@ -126,43 +126,42 @@ public class OnlineNoteHistory extends QDialog {
 	}
 	
 	public void setContent(Note currentNote) {
-		QByteArray b = new QByteArray(rebuildNoteHTML(currentNote));
-		// Change the encoding
-		
-		QByteArray js = new QByteArray();
+		StringBuffer b = rebuildNoteHTML(currentNote);
+		StringBuffer js = new StringBuffer();
 
 		// We need to prepend the note with <HEAD></HEAD> or encoded characters are ugly 
-		js.append("<html><head><meta http-equiv=\"Content-Type\" content=\"text/html;charset=UTF-16\">");
+		js.append("<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\">");	
 		js.append("<style type=\"text/css\">en-crypt-temp { border-style:solid; border-color:blue; padding:1mm 1mm 1mm 1mm; }</style>");
 		js.append("</head>");
-		js.append(b);
+		js.append(b.toString());
 		js.append("</HTML>");
-		js.replace("<!DOCTYPE en-note SYSTEM 'http://xml.evernote.com/pub/enml2.dtd'>", "");
-		js.replace("<?xml version='1.0' encoding='UTF-8'?>", "");
+//		js.replace("<!DOCTYPE en-note SYSTEM 'http://xml.evernote.com/pub/enml2.dtd'>", "");
+//		js.replace("<?xml version='1.0' encoding='UTF-8'?>", "");
 		
 		browser.setNote(currentNote);
-		browser.getBrowser().setContent(js);
+		browser.getBrowser().page().mainFrame().setHtml(js.toString());
 	}
  
 	//*************************************************
 	//* XML Modifying Methods
 	//*************************************************
-	private String rebuildNoteHTML(Note note) {
+	private StringBuffer rebuildNoteHTML(Note note) {
 		QDomDocument doc = new QDomDocument();
 		QDomDocument.Result result = doc.setContent(note.getContent());
 		if (!result.success) {
-			return note.getContent();
+			return new StringBuffer(note.getContent());
 		}
 		
 		doc = modifyTags(note, doc);
 		QDomElement docElem = doc.documentElement();
 		docElem.setTagName("Body");
 		
-		
 		// Fix the stupid problem where inserting an <img> tag after an <a> tag (which is done
 		// to get the <en-media> application tag to work properly) causes spaces to be inserted
 		// between the <a> & <img>.  This messes things up later.  This is an ugly hack.
-		StringBuffer html = new StringBuffer(doc.toString());
+		String docString = doc.toString();
+		StringBuffer html = new StringBuffer(docString.substring(docString.toLowerCase().indexOf("<body>")));
+		
 		for (int i=html.indexOf("<a en-tag=\"en-media\" ", 0); i>-1; i=html.indexOf("<a en-tag=\"en-media\" ", i)) {
 			i=html.indexOf(">\n",i+1);
 			int z = html.indexOf("<img",i);
@@ -173,7 +172,7 @@ public class OnlineNoteHistory extends QDialog {
 			for (int j=z-1; j>i+1; j--) 
 				html.deleteCharAt(j);
 		} 
-		return html.toString();
+		return html;
 	}	
 
 	
