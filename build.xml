@@ -11,8 +11,6 @@
   <property name="bin.dir" value="bin"/>
   <property name="db.dir" value="db"/>
   <property name="logs.dir" value="logs"/>
-  <property name="qtlib.dir" value="lib"/>
-  <property name="system.lib.dir" value="/usr/share/java"/>
 
   <!-- debug -->
   <property name="javac.debug" value="1"/>
@@ -24,8 +22,47 @@
   <property name="shell.command" value="nevernote.sh"/>
   <property name="bat.command" value="nevernote.bat"/>
 
-  <!-- depends -->
-  <path id="javac.classpath">
+  <!-- check os -->
+  <condition property="isWindows">
+      <os family="windows" />
+  </condition>
+  <condition property="isLinux">
+      <os name="Linux" arch="i386" />
+  </condition>
+  <condition property="isLinux64">
+      <os name="Linux" arch="amd64" />
+  </condition>
+  <condition property="isMacOSX">
+      <os name="Mac OS X" />
+  </condition>
+
+  <!-- os dependent library path and lib file -->
+  <target name="check_syslib_path" depends="lib-if_windows, lib-if_linux, lib-if_linux64"/>
+
+  <target name="lib-if_windows" if="isWindows">
+      <property name="system.lib.dir" value="D:/NeverNote/lib"/>
+      <property name="qtlib.dir" value="D:/qtjambi-${qtjambi.ver}"/>
+      <property name="qtjambi-platform" value="win32-msvc2005"/>
+  </target>
+
+  <target name="lib-if_linux" if="isLinux">
+      <property name="system.lib.dir" value="/usr/share/java"/>
+      <property name="qtlib.dir" value="lib"/>
+      <property name="qtjambi.platform" value="linux32-gcc"/>
+  </target>
+  <target name="lib-if_linux64" if="isLinux64">
+      <property name="system.lib.dir" value="/usr/share/java"/>
+      <property name="qtlib.dir" value="lib"/>
+      <property name="qtjambi.platform" value="linux64-gcc"/>
+  </target>
+  <target name="lib-if_macosx" if="isMacOSX">
+      <property name="system.lib.dir" value="/Library/Java/Extensions"/>
+      <property name="qtlib.dir" value="lib"/>
+      <property name="qtjambi.platform" value="macosx-gcc"/>
+  </target>
+
+  <target name="set_classpath" depends="check_syslib_path">
+    <path id="javac.classpath">
       <!-- system third party library -->
       <pathelement location="${system.lib.dir}/pdfrenderer.jar"/>
       <pathelement location="${system.lib.dir}/log4j-1.2.jar"/>
@@ -36,10 +73,11 @@
       <!-- dependent library -->
       <pathelement location="${qtlib.dir}/qtjambi-${qtjambi.ver}.jar"/>
       <pathelement location="${qtlib.dir}/qtjambi-util-${qtjambi.ver}.jar"/>
-      <pathelement location="${qtlib.dir}/qtjambi-linux32-gcc-${qtjambi.ver}.jar"/>
-  </path>
+      <pathelement location="${qtlib.dir}/qtjambi-${qtjambi.platform}-${qtjambi.ver}.jar"/>
+    </path>
+  </target>
 
-  <target name="init">
+  <target name="init" depends="set_classpath">
     <tstamp/>
     <mkdir dir="${classes.dir}"/>
     <mkdir dir="${dist.dir}"/>
@@ -74,8 +112,22 @@
      </copy>
   </target>
 
-  <target name="run" depends="run-init"
+  <target name="run" depends="run-if_windows, run-if_linux, run-if_linux64"
    description="run built jar">
+  </target>
+
+  <target name="run-if_windows" depends="run-init" if="isWindows">
+    <exec dir="." executable="cmd" os="Windows NT">
+        <arg line="/c ${bin.dir}\${batch.command}"/>
+    </exec>
+  </target>
+
+  <target name="run-if_linux" depends="run-init" if="isLinux">
+    <exec executable="${bin.dir}/${shell.command}"/>
+  </target>
+
+  <target name="run-if_linux64" depends="run-init" if="isLinux64">
+    <exec executable="${bin.dir}/${shell.command}"/>
   </target>
 
   <target name="test"
