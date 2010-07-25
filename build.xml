@@ -21,6 +21,13 @@
   <!-- debug -->
   <property name="javac.debug" value="true"/>
 
+  <!-- run parameter -->
+  <!-- heap -->
+  <property name="jvm.xms" value="256M"/><!-- initial memory size -->
+  <property name="jvm.xmm" value="512M"/><!-- maximum memory size -->
+  <property name="jvm.newratio" value="2"/>
+  <property name="jvm.gcs" value="incgc"/><!-- GC strategy -->
+
   <!-- product jar file -->
   <property name="jar.name" value="nevernote.jar"/>
 
@@ -58,7 +65,7 @@
 
   <target name="lib-if_linux" if="isLinux">
       <property name="system.lib.dir" value="/usr/share/java"/>
-      <property name="qtlib.dir" value="lib"/>
+      <property name="qtlib.dir" value="/home/miurahr/lib/qtjambi"/>
       <property name="qtjambi.platform" value="linux32-gcc"/>
   </target>
   <target name="lib-if_linux64" if="isLinux64">
@@ -72,10 +79,9 @@
       <property name="qtjambi.platform" value="macosx-gcc"/>
   </target>
 
-
   <!-- compiler classpath -->
   <target name="set_classpath" depends="check_syslib_path">
-    <path id="javac.classpath">
+    <path id="java.classpath">
       <!-- system third party library -->
       <pathelement location="${system.lib.dir}/pdfrenderer.jar"/>
       <pathelement location="${system.lib.dir}/log4j-1.2.jar"/>
@@ -85,8 +91,8 @@
       <pathelement location="${lib.dir}/libthrift.jar"/>
       <!-- dependent library -->
       <pathelement location="${qtlib.dir}/qtjambi-${qtjambi.ver}.jar"/>
-      <pathelement location="${qtlib.dir}/qtjambi-util-${qtjambi.ver}.jar"/>
       <pathelement location="${qtlib.dir}/qtjambi-${qtjambi.platform}-${qtjambi.ver}.jar"/>
+      <pathelement location="${qtlib.dir}/qtjambi-util-${qtjambi.ver}.jar"/>
     </path>
   </target>
 
@@ -100,7 +106,7 @@
     <javac srcdir="${src.dir}"
        destdir="${classes.dir}"
        debug="${javac.debug}">
-       <classpath refid="javac.classpath"/>
+       <classpath refid="java.classpath"/>
     </javac>
   </target>
 
@@ -119,13 +125,13 @@
   </target>
 
   <target name="dist" depends="jar, dist-init">
-     <copy file="${bin.dir}/${shell.command}" todir="${dist.dir}/${project.name}/bin"/>
-     <copy file="${bin.dir}/${bat.command}" todir="${dist.dir}/${project.name}/bin"/>
-     <copy todir="${dist.dir}/${project.name}lib">
+     <copy file="${bin.dir}/${shell.command}" todir="${dist.dir}/bin"/>
+     <copy file="${bin.dir}/${bat.command}" todir="${dist.dir}/bin"/>
+     <copy todir="${dist.dir}/lib">
        <fileset file="${jar.name}"/>
        <fileset dir="${lib.dir}"/>
      </copy>
-     <copy todir="${dist.dir}/${project.name}/doc">
+     <copy todir="${dist.dir}/doc">
        <fileset file="${doc.changelog}"/>
        <fileset file="${doc.release}"/>
        <fileset file="${doc.readme}"/>
@@ -143,8 +149,18 @@
     <mkdir dir="${db.dir}"/>
   </target>
 
-  <target name="run" depends="run-if_windows, run-if_linux, run-if_linux64"
-   description="run built jar">
+  <target name="run" depends="run-init">
+    <java classname="cx.fbn.nevernote.NeverNote"
+      fork="yes" maxmemory="${jvm.xmm}"
+      classpathref="java.classpath" classpath="${jar.name}">
+      <jvmarg value="-XX:NewRatio=${jvm.newratio}"/>
+      <jvmarg value="-X${jvm.gcs}"/>
+    </java>
+  </target>
+
+  <!-- script test run -->
+  <target name="run-script" depends="run-if_windows, run-if_linux, run-if_linux64"
+   description="run starter script">
   </target>
 
   <target name="run-if_windows" depends="run-init" if="isWindows">
@@ -152,18 +168,16 @@
         <arg line="/c ${bin.dir}\${batch.command}"/>
     </exec>
   </target>
-
   <target name="run-if_linux" depends="run-init" if="isLinux">
     <exec executable="${bin.dir}/${shell.command}"/>
   </target>
-
   <target name="run-if_linux64" depends="run-init" if="isLinux64">
     <exec executable="${bin.dir}/${shell.command}"/>
   </target>
 
   <!-- clean up -->
   <target name="clean"
-   description="clean up" >
+   description="clean up without classes and run env" >
     <delete dir="${dist.dir}" />
     <delete file="${jar.name}"/>
   </target>
