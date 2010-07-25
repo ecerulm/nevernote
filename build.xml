@@ -111,10 +111,12 @@
   </target>
 
   <target name="resources" depends="init">
-	  <mkdir dir="${classes.dir}/cx/fbn/nevernote/icons"/>
-	  <copy todir="${classes.dir}/cx/fbn/nevernote/icons">
-		  <fileset dir="${src.dir}/cx/fbn/nevernote/icons"/>
-	  </copy>
+      <mkdir dir="${classes.dir}/cx/fbn/nevernote/icons"/>
+      <copy todir="${classes.dir}/cx/fbn/nevernote/icons">
+	  <fileset dir="${src.dir}/cx/fbn/nevernote/icons"/>
+      </copy>
+      <copy file="${src.dir}/com/swabunga/spell/engine/configuration.properties"
+            todir="${classes.dir}/com/swabunga/spell/engine/"/>
   </target>
 
   <target name="jar" depends="compile,resources">
