@@ -110,7 +110,14 @@
     </javac>
   </target>
 
-  <target name="jar" depends="compile">
+  <target name="resources" depends="init">
+	  <mkdir dir="${classes.dir}/cx/fbn/nevernote/icons"/>
+	  <copy todir="${classes.dir}/cx/fbn/nevernote/icons">
+		  <fileset dir="${src.dir}/cx/fbn/nevernote/icons"/>
+	  </copy>
+  </target>
+
+  <target name="jar" depends="compile,resources">
     <jar destfile="${jar.name}" basedir="${classes.dir}"/>
   </target>
 
